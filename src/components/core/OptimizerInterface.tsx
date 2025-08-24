@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Play, Square, Copy, RotateCcw } from 'lucide-react'
+import { Play, Square, Copy, RotateCcw, Clipboard } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -118,6 +118,16 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
     }
   }
 
+  const handleCopyPrompt = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('Prompt copied to clipboard!')
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+      toast.error('Failed to copy prompt')
+    }
+  }
+
   const handleRestartWithFeedback = () => {
     if (bestResult) {
       setInput(bestResult.prompt)
@@ -138,7 +148,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Enter your initial prompt or idea..."
-              className="w-full h-32 p-3 border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-64 p-3 border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
               disabled={isOptimizing}
             />
             
@@ -223,8 +233,30 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
                       </span>
                     </div>
                     
-                    <div className="whitespace-pre-wrap text-sm bg-muted p-3 rounded">
+                    <div className="whitespace-pre-wrap text-sm bg-muted p-3 rounded mb-3">
                       {round.improved}
+                    </div>
+                    
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleCopyPrompt(round.improved)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs border border-border rounded hover:bg-accent transition-colors"
+                        title="Copy prompt"
+                      >
+                        <Clipboard className="w-3 h-3" />
+                        Copy
+                      </button>
+                      <button
+                        onClick={() => {
+                          setInput(round.improved)
+                          setOptimizerBestResult(tabId, undefined)
+                        }}
+                        className="flex items-center gap-1 px-2 py-1 text-xs border border-border rounded hover:bg-accent transition-colors"
+                        title="Restart with this prompt"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Restart
+                      </button>
                     </div>
                   </div>
                 ))}

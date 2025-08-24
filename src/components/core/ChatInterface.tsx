@@ -5,6 +5,7 @@ import { Send, StopCircle } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
+import ThinkingAnimation from './ThinkingAnimation'
 import { toast } from 'sonner'
 
 interface ChatInterfaceProps {
@@ -15,6 +16,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
   const { chatStates, addChatMessage, updateChatMessage } = useAppStore()
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [isThinking, setIsThinking] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -39,6 +41,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
     addChatMessage(tabId, { role: 'user', content: userMessage })
 
     setIsStreaming(true)
+    setIsThinking(true)
     const controller = new AbortController()
     setAbortController(controller)
 
@@ -121,6 +124,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
       }
     } finally {
       setIsStreaming(false)
+      setIsThinking(false)
       setAbortController(null)
     }
   }
@@ -150,9 +154,24 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
             <p className="text-sm mt-2">Press ⌘⏎ to send</p>
           </div>
         ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))
+          <>
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+            {isThinking && (
+              <div className="flex items-start space-x-3 p-4 animate-fade-in">
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 bg-primary rounded-full" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <ThinkingAnimation className="mb-2" />
+                  <div className="text-sm text-muted-foreground">
+                    正在生成回應，請稍候...
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
