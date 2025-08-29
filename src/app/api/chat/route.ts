@@ -21,6 +21,7 @@ class AIClient {
         parts: [{ text: msg.content }]
       }))
 
+      // 使用標準 API 調用（無緩存）
       const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
         method: 'POST',
         headers: {

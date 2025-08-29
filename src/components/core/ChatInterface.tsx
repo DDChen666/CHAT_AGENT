@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Send, StopCircle } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
+import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import MessageBubble from './MessageBubble'
 import ThinkingAnimation from './ThinkingAnimation'
@@ -14,10 +15,12 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ tabId }: ChatInterfaceProps) {
   const { chatStates, addChatMessage, updateChatMessage } = useAppStore()
+  const { features } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [tokenUsage, setTokenUsage] = useState({ prompt: 0, completion: 0, total: 0 })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -30,7 +33,24 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
   useEffect(() => {
     scrollToBottom()
-  }, [messages])
+    
+    // Calculate token usage when messages change
+    if (features.showTokenUsage) {
+      const promptTokens = messages
+        .filter(msg => msg.role === 'user')
+        .reduce((sum, msg) => sum + Math.ceil(msg.content.length / 4), 0)
+      
+      const completionTokens = messages
+        .filter(msg => msg.role === 'assistant')
+        .reduce((sum, msg) => sum + Math.ceil(msg.content.length / 4), 0)
+      
+      setTokenUsage({
+        prompt: promptTokens,
+        completion: completionTokens,
+        total: promptTokens + completionTokens
+      })
+    }
+  }, [messages, features.showTokenUsage])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -58,6 +78,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
           messages: [...messages, { role: 'user', content: userMessage }],
           temperature: 0.3,
           stream: true,
+          enableCache: features.enableGeminiCache,
         }),
         signal: controller.signal,
       })
@@ -175,6 +196,18 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Token Usage Display */}
+      {features.showTokenUsage && tokenUsage.total > 0 && (
+        <div className="px-4 py-2 border-t border-border bg-muted/50">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Tokens: {tokenUsage.total} total</span>
+            <span>
+              Prompt: {tokenUsage.prompt} • Completion: {tokenUsage.completion}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Input Area */}
       <div className="p-4 border-t border-border">
