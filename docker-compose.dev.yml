@@ -1,0 +1,21 @@
+version: '3.8'
+
+# 这个文件是空的，因为当前项目不需要任何背景服务
+# 当将来添加数据库或其他服务时，才需要在这里配置
+
+services:
+  # 当前项目没有需要容器化的背景服务
+  # 示例：如果将来添加PostgreSQL
+  # db:
+  #   image: postgres:14-alpine
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #   ports:
+  #     - "${POSTGRES_PORT:-5432}:5432"
+  #   volumes:
+  #     - db_data_dev:/var/lib/postgresql/data
+
+volumes:
+  # db_data_dev:

@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  synapse-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      # 添加你的环境变量
+      - GOOGLE_GEMINI_API_KEY=${GOOGLE_GEMINI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - synapse-network
+
+networks:
+  synapse-network:
+    driver: bridge
+
+# 使用方法：
+# 1. 创建 .env 文件并设置API密钥
+# 2. 运行: docker-compose up --build
+# 3. 访问: http://localhost:3000

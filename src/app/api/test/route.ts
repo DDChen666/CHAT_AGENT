@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,11 +69,12 @@ async function testGeminiConnection(apiKey: string) {
         message: 'Gemini API returned empty response'
       })
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Gemini test error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return Response.json({
       success: false,
-      message: `Gemini API connection failed: ${error.message || 'Unknown error'}`
+      message: `Gemini API connection failed: ${errorMessage}`
     })
   }
 }
@@ -83,6 +83,7 @@ async function testDeepSeekConnection(apiKey: string) {
   try {
     // DeepSeek API test implementation
     // For now, we'll simulate a successful test since DeepSeek integration is not fully implemented
+    console.log('Testing DeepSeek API with key:', apiKey.substring(0, 10) + '...')
     await new Promise(resolve => setTimeout(resolve, 500))
     
     return Response.json({
@@ -90,11 +91,12 @@ async function testDeepSeekConnection(apiKey: string) {
       message: 'DeepSeek API connection successful (simulated)',
       response: 'DeepSeek connection test passed'
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error('DeepSeek test error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
     return Response.json({
       success: false,
-      message: `DeepSeek API connection failed: ${error.message || 'Unknown error'}`
+      message: `DeepSeek API connection failed: ${errorMessage}`
     })
   }
 }
