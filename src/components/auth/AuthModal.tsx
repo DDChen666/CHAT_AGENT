@@ -41,8 +41,8 @@ export default function AuthModal({ open, onOpenChange }: Props) {
       if (!res.ok) throw new Error(j?.message || 'Login failed')
       setUser(j.user)
       onOpenChange(false)
-    } catch (err: any) {
-      setError(err.message || 'Login failed')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Login failed')
     } finally { setLoading(false) }
   }
 
@@ -58,8 +58,8 @@ export default function AuthModal({ open, onOpenChange }: Props) {
       if (!res.ok) throw new Error(j?.message || 'Register failed')
       setUser(j.user)
       onOpenChange(false)
-    } catch (err: any) {
-      setError(err.message || 'Register failed')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Register failed')
     } finally { setLoading(false) }
   }
 
@@ -129,4 +129,3 @@ export default function AuthModal({ open, onOpenChange }: Props) {
     </Dialog>
   )
 }
-

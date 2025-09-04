@@ -2,18 +2,7 @@ export const runtime = 'nodejs'
 
 import prisma from '@/lib/prisma'
 import { getTokenPayloadFromCookies } from '@/lib/auth'
-
-async function testGemini(apiKey: string) {
-  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }),
-  })
-  if (!res.ok) throw new Error('Gemini HTTP ' + res.status)
-  const data = await res.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Empty')
-}
+import { Provider as DbProvider } from '@prisma/client'
 
 async function testDeepSeek(apiKey: string) {
   const res = await fetch('https://api.deepseek.com/chat/completions', {
@@ -54,7 +43,7 @@ export async function GET(request: Request) {
   if (!['gemini', 'deepseek'].includes(provider)) return Response.json({ success: false, message: 'Invalid provider' }, { status: 400 })
 
   const rec = await prisma.apiKey.findUnique({
-    where: { userId_provider: { userId: payload.userId, provider: provider.toUpperCase() as any } },
+    where: { userId_provider: { userId: payload.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
     select: { encryptedKey: true },
   })
   if (!rec) return Response.json({ success: false, message: 'No saved key' }, { status: 404 })
@@ -67,14 +56,15 @@ export async function GET(request: Request) {
     if (provider === 'gemini') {
       let ok = false; let last = ''
       for (const m of GEMINI_TEST_CANDIDATES) {
-        try { await tryGemini(key, m); ok = true; break } catch (e: any) { last = e?.message || String(e) }
+        try { await tryGemini(key, m); ok = true; break } catch (e: unknown) { last = e instanceof Error ? e.message : String(e) }
       }
       if (!ok) throw new Error(last || 'Test failed')
     } else {
       await testDeepSeek(key)
     }
     return Response.json({ success: true })
-  } catch (e: any) {
-    return Response.json({ success: false, message: e?.message || 'Test failed' })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Test failed'
+    return Response.json({ success: false, message: msg })
   }
 }

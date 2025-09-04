@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server'
-import { ModelOptions } from '@/lib/providers'
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +23,7 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         )
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('API test error:', error)
     return Response.json(
       { success: false, message: 'Internal server error' },
@@ -71,8 +70,9 @@ async function tryGemini(apiKey: string, model: string) {
     } else {
       throw new Error('Gemini API returned empty response')
     }
-  } catch (error: any) {
-    return { ok: false, message: error.message || 'Unknown error' }
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown error'
+    return { ok: false, message: msg }
   }
 }
 
@@ -115,11 +115,11 @@ async function testDeepSeekConnection(apiKey: string) {
     const data = await res.json()
     const text = data.choices?.[0]?.message?.content
     return Response.json({ success: true, message: 'DeepSeek API connection successful', response: (text || '').slice(0, 50) + '...' })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('DeepSeek test error:', error)
     return Response.json({
       success: false,
-      message: `DeepSeek API connection failed: ${error.message || 'Unknown error'}`
+      message: `DeepSeek API connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     })
   }
 }

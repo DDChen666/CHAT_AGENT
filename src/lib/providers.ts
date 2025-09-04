@@ -40,12 +40,11 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
     parts: [{ text: m.content }],
   }))
 
-  const body: any = { contents }
-  if (cfg.temperature || cfg.maxTokens) {
-    body.generationConfig = {
-      ...(typeof cfg.temperature === 'number' ? { temperature: cfg.temperature } : {}),
-      ...(typeof cfg.maxTokens === 'number' ? { maxOutputTokens: cfg.maxTokens } : {}),
-    }
+  const body: { contents: { role: 'user' | 'model'; parts: { text: string }[] }[]; generationConfig?: { temperature?: number; maxOutputTokens?: number } } = { contents }
+  if (typeof cfg.temperature === 'number' || typeof cfg.maxTokens === 'number') {
+    body.generationConfig = {}
+    if (typeof cfg.temperature === 'number') body.generationConfig.temperature = cfg.temperature
+    if (typeof cfg.maxTokens === 'number') body.generationConfig.maxOutputTokens = cfg.maxTokens
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
@@ -71,14 +70,14 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
 async function callDeepSeek(model: string, messages: ChatMessage[], apiKey: string, cfg: GenConfig) {
   if (!apiKey) throw new Error('DeepSeek API key missing')
 
-  const dsMessages = messages.map(m => ({ role: m.role, content: m.content }))
-  const body: any = {
+  const dsMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = messages.map(m => ({ role: m.role, content: m.content }))
+  const body: { model: string; messages: typeof dsMessages; temperature?: number; max_tokens?: number; stream: false } = {
     model,
     messages: dsMessages,
-    ...(typeof cfg.temperature === 'number' ? { temperature: cfg.temperature } : {}),
-    ...(typeof cfg.maxTokens === 'number' ? { max_tokens: cfg.maxTokens } : {}),
     stream: false,
   }
+  if (typeof cfg.temperature === 'number') body.temperature = cfg.temperature
+  if (typeof cfg.maxTokens === 'number') body.max_tokens = cfg.maxTokens
   const res = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: {
@@ -97,4 +96,3 @@ async function callDeepSeek(model: string, messages: ChatMessage[], apiKey: stri
   if (!text) throw new Error('DeepSeek returned empty response')
   return text
 }
-

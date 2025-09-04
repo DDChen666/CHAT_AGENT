@@ -3,7 +3,8 @@ export const runtime = 'nodejs'
 import { NextRequest } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getTokenPayloadFromCookies } from '@/lib/auth'
-import { callProvider, type ChatMessage as ChatMsg } from '@/lib/providers'
+import { callProvider, type ChatMessage as ChatMsg, type ProviderName } from '@/lib/providers'
+import { Provider as DbProvider, MessageRole } from '@prisma/client'
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +34,7 @@ export async function POST(request: NextRequest) {
       const session = getTokenPayloadFromCookies()
       if (session?.userId) {
         const rec = await prisma.apiKey.findUnique({
-          where: { userId_provider: { userId: session.userId, provider: provider.toUpperCase() as any } },
+          where: { userId_provider: { userId: session.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
           select: { encryptedKey: true },
         })
         if (rec) {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
       if (lastUserMessageContent) {
         try {
           await prisma.message.create({
-            data: { conversationId: validatedConversationId, role: 'USER' as any, content: lastUserMessageContent },
+            data: { conversationId: validatedConversationId, role: MessageRole.USER, content: lastUserMessageContent },
             select: { id: true },
           })
           await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
         async start(controller) {
           try {
             const responseText = await callProvider(
-              provider,
+              provider as ProviderName,
               chosenModel,
               messages as ChatMsg[],
               effectiveKey,
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
             if (validatedConversationId && responseText) {
               try {
                 await prisma.message.create({
-                  data: { conversationId: validatedConversationId, role: 'ASSISTANT' as any, content: responseText },
+                  data: { conversationId: validatedConversationId, role: MessageRole.ASSISTANT, content: responseText },
                   select: { id: true },
                 })
                 await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
@@ -121,10 +122,11 @@ export async function POST(request: NextRequest) {
             }
 
             // 最終完成消息
+            type Msg = { role: 'user' | 'assistant' | 'system'; content: string }
             const doneMessage = {
               type: 'done',
               usage: {
-                prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0) / 4),
+                prompt_tokens: Math.ceil((messages as Msg[]).reduce((sum: number, msg: Msg) => sum + msg.content.length, 0) / 4),
                 completion_tokens: Math.ceil(responseText.length / 4),
               },
             }
@@ -160,7 +162,7 @@ export async function POST(request: NextRequest) {
     // 非流式回應
     try {
       const responseText = await callProvider(
-        provider,
+        provider as ProviderName,
         chosenModel,
         messages as ChatMsg[],
         effectiveKey,
@@ -169,7 +171,7 @@ export async function POST(request: NextRequest) {
       if (validatedConversationId && responseText) {
         try {
           await prisma.message.create({
-            data: { conversationId: validatedConversationId, role: 'ASSISTANT' as any, content: responseText },
+            data: { conversationId: validatedConversationId, role: MessageRole.ASSISTANT, content: responseText },
             select: { id: true },
           })
           await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
@@ -178,10 +180,11 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      type Msg = { role: 'user' | 'assistant' | 'system'; content: string }
       return Response.json({
         message: responseText,
         usage: {
-          prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0) / 4),
+          prompt_tokens: Math.ceil((messages as Msg[]).reduce((sum: number, msg: Msg) => sum + msg.content.length, 0) / 4),
           completion_tokens: Math.ceil(responseText.length / 4),
         },
         provider,

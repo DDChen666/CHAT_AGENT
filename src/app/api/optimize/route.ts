@@ -3,7 +3,8 @@ export const runtime = 'nodejs'
 import { NextRequest } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getTokenPayloadFromCookies } from '@/lib/auth'
-import { callProvider } from '@/lib/providers'
+import { callProvider, type ProviderName } from '@/lib/providers'
+import { Provider as DbProvider } from '@prisma/client'
 
 // 優化器邏輯
 class OptimizerClient {
@@ -63,7 +64,7 @@ ${initialPrompt}
 
 請提供優化後的版本，直接輸出優化後的提示詞內容，不要包含任何額外的解釋或評論。`
       const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
-      const text = await callProvider(provider as any, model, [{ role: 'user', content: optimizationPrompt }], apiKey || '', { temperature: 0.3, maxTokens: 1024 })
+      const text = await callProvider(provider as ProviderName, model, [{ role: 'user', content: optimizationPrompt }], apiKey || '', { temperature: 0.3, maxTokens: 1024 })
       return text
     } catch (error) {
       console.error('Optimization API error:', error)
@@ -102,7 +103,7 @@ ${prompt}
 
 請只返回JSON格式的評分，不要添加任何其他內容。`
       const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
-      const jsonResponse = await callProvider(provider as any, model, [{ role: 'user', content: reviewPrompt }], apiKey || '', { temperature: 0 })
+      const jsonResponse = await callProvider(provider as ProviderName, model, [{ role: 'user', content: reviewPrompt }], apiKey || '', { temperature: 0 })
       const text = (jsonResponse || '').trim()
       
       // 嘗試解析JSON回應
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
       const session = getTokenPayloadFromCookies()
       if (session?.userId) {
         const rec = await prisma.apiKey.findUnique({
-          where: { userId_provider: { userId: session.userId, provider: provider.toUpperCase() as any } },
+          where: { userId_provider: { userId: session.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
           select: { encryptedKey: true },
         })
         if (rec) {

@@ -38,7 +38,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     if (!availableModels.includes(modelSettings.defaultModel)) {
       setModelSettings({ defaultModel: availableModels[0] })
     }
-  }, [availableModels])
+  }, [availableModels, modelSettings.defaultModel, setModelSettings])
 
   // Load saved keys and test status lights (server-saved keys)
   useEffect(() => {
@@ -48,9 +48,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         const res = await fetch('/api/keys', { cache: 'no-store' })
         if (!res.ok) throw new Error('failed')
         const data = await res.json()
-        const map: Record<string, { hasKey: boolean }> = {}
-        for (const k of data.keys || []) { map[k.provider] = { hasKey: true } }
-        const next: any = { gemini: map.gemini ? 'fail' : 'missing', deepseek: map.deepseek ? 'fail' : 'missing' }
+        const map: Record<'gemini'|'deepseek', { hasKey: boolean } | undefined> = { gemini: undefined, deepseek: undefined }
+        for (const k of (data.keys || []) as Array<{ provider: 'gemini'|'deepseek' }>) { map[k.provider] = { hasKey: true } }
+        const next: { gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' } = {
+          gemini: map.gemini ? 'fail' : 'missing',
+          deepseek: map.deepseek ? 'fail' : 'missing'
+        }
         setStatus(next)
 
         // Try server-side test for those present
@@ -71,8 +74,11 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   useEffect(() => {
     let aborted = false
     ;(async () => {
-      for (const p of ['gemini','deepseek'] as const) {
-        const key = apiKeys[p]
+      const { gemini: geminiKey, deepseek: deepseekKey } = apiKeys
+      const toTest: Array<['gemini'|'deepseek', string]> = []
+      if (geminiKey) toTest.push(['gemini', geminiKey])
+      if (deepseekKey) toTest.push(['deepseek', deepseekKey])
+      for (const [p, key] of toTest) {
         if (!key) continue
         try {
           const r = await fetch('/api/test', {
@@ -87,7 +93,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       }
     })()
     return () => { aborted = true }
-  }, [apiKeys.gemini, apiKeys.deepseek])
+  }, [apiKeys])
 
   const handleSave = () => {
     // Settings are automatically saved to the store
