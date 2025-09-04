@@ -1,22 +1,22 @@
 export const runtime = 'nodejs'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import prisma from '@/lib/prisma'
 import { getTokenPayloadFromCookies } from '@/lib/auth'
+import { MessageRole } from '@prisma/client'
 
-type Params = { params: { id: string } }
 
 const roles = ['USER', 'ASSISTANT', 'SYSTEM'] as const
-type Role = typeof roles[number]
 
-export async function POST(request: Request, { params }: Params) {
+export async function POST(request: Request, context: any) {
   try {
     const payload = getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
-    const { id } = params
+    const { id } = (context?.params || {}) as { id: string }
     const { role, content } = (await request.json()) as { role?: string; content?: string }
 
-    if (!role || !roles.includes(role.toUpperCase() as Role) || !content?.trim()) {
+    if (!role || !roles.includes(role.toUpperCase() as typeof roles[number]) || !content?.trim()) {
       return Response.json({ message: 'Invalid payload' }, { status: 400 })
     }
 
@@ -26,7 +26,7 @@ export async function POST(request: Request, { params }: Params) {
     const message = await prisma.message.create({
       data: {
         conversationId: id,
-        role: role.toUpperCase() as Role,
+        role: role.toUpperCase() as MessageRole,
         content: content.trim(),
       },
       select: { id: true, role: true, content: true, createdAt: true },
@@ -40,4 +40,3 @@ export async function POST(request: Request, { params }: Params) {
     return Response.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
-

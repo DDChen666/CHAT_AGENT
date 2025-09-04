@@ -1,16 +1,15 @@
 export const runtime = 'nodejs'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import prisma from '@/lib/prisma'
 import { getTokenPayloadFromCookies } from '@/lib/auth'
 
-type Params = { params: { id: string } }
-
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(_req: Request, context: any) {
   try {
     const payload = getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
-    const { id } = params
+    const { id } = (context?.params || {}) as { id: string }
 
     const conversation = await prisma.conversation.findFirst({
       where: { id, userId: payload.userId },
@@ -35,12 +34,12 @@ export async function GET(_req: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_req: Request, { params }: Params) {
+export async function DELETE(_req: Request, context: any) {
   try {
     const payload = getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
-    const { id } = params
+    const { id } = (context?.params || {}) as { id: string }
 
     const conv = await prisma.conversation.findFirst({ where: { id, userId: payload.userId }, select: { id: true } })
     if (!conv) return Response.json({ message: 'Not found' }, { status: 404 })
@@ -52,4 +51,3 @@ export async function DELETE(_req: Request, { params }: Params) {
     return Response.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
-
