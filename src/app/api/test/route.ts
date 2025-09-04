@@ -39,7 +39,9 @@ const GEMINI_TEST_CANDIDATES = [
   'gemini-2.0-flash',
 ]
 
-async function tryGemini(apiKey: string, model: string) {
+type GeminiTestResult = { ok: true; response: string } | { ok: false; message: string }
+
+async function tryGemini(apiKey: string, model: string): Promise<GeminiTestResult> {
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
@@ -78,7 +80,7 @@ async function tryGemini(apiKey: string, model: string) {
 
 async function testGeminiConnection(apiKey: string, model?: string) {
   const candidates = model ? [model] : GEMINI_TEST_CANDIDATES
-  let lastErr = ''
+  let lastErr: string = ''
   for (const m of candidates) {
     const r = await tryGemini(apiKey, m)
     if (r.ok) {
