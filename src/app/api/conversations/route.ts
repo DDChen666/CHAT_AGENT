@@ -5,7 +5,7 @@ import { getTokenPayloadFromCookies } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const payload = getTokenPayloadFromCookies()
+    const payload = await getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
     const conversations = await prisma.conversation.findMany({
@@ -23,7 +23,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const payload = getTokenPayloadFromCookies()
+    const payload = await getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
     const body = (await request.json().catch(() => ({}))) as { title?: string }
@@ -40,4 +40,3 @@ export async function POST(request: Request) {
     return Response.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
-

@@ -34,8 +34,8 @@ export async function callProvider(
 async function callGemini(model: string, messages: ChatMessage[], apiKey: string, cfg: GenConfig) {
   if (!apiKey) throw new Error('Gemini API key missing')
 
-  // Map to Gemini contents
-  const contents = messages.map(m => ({
+  // Map to Gemini contents with literal role types
+  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = messages.map((m): { role: 'user' | 'model'; parts: { text: string }[] } => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }],
   }))

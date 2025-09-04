@@ -13,9 +13,10 @@ function toEnum(p: Provider): DbProvider {
 
 export async function GET() {
   const payload = getTokenPayloadFromCookies()
-  if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
+  const p = await payload
+  if (!p) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
-  const keys = await prisma.apiKey.findMany({ where: { userId: payload.userId } })
+  const keys = await prisma.apiKey.findMany({ where: { userId: p.userId } })
   const data = keys.map(k => {
     let hint: string | null = null
     try {
@@ -28,7 +29,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const payload = getTokenPayloadFromCookies()
+  const payload = await getTokenPayloadFromCookies()
   if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
   const { provider, apiKey } = (await request.json()) as { provider?: Provider; apiKey?: string }
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const payload = getTokenPayloadFromCookies()
+  const payload = await getTokenPayloadFromCookies()
   if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
   const { provider } = (await request.json()) as { provider?: Provider }
   if (!provider) return Response.json({ message: 'Invalid payload' }, { status: 400 })

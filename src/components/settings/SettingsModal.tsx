@@ -29,8 +29,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   // Compute model list bound to provider
   const availableModels = useMemo(() => {
-    const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
-    return ModelOptions[provider]
+    return ModelOptions[modelSettings.defaultProvider]
   }, [modelSettings.defaultProvider])
 
   // Ensure defaultModel belongs to current provider
@@ -57,7 +56,8 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         setStatus(next)
 
         // Try server-side test for those present
-        await Promise.all(['gemini','deepseek'].map(async (p) => {
+        const providers = ['gemini','deepseek'] as const
+        await Promise.all(providers.map(async (p) => {
           if (!map[p]) return
           const r = await fetch(`/api/keys/test?provider=${p}`)
           const ok = r.ok && (await r.json()).success
@@ -295,7 +295,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               </label>
               <select
                 value={modelSettings.defaultProvider}
-                onChange={(e) => setModelSettings({ defaultProvider: e.target.value })}
+                onChange={(e) => setModelSettings({ defaultProvider: e.target.value as 'gemini' | 'deepseek' })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="gemini">Gemini</option>

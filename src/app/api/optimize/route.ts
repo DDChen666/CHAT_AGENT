@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     // Resolve API key (body > saved per-user > env)
     let effectiveKey = (apiKey || '').trim()
     if (!effectiveKey) {
-      const session = getTokenPayloadFromCookies()
+      const session = await getTokenPayloadFromCookies()
       if (session?.userId) {
         const rec = await prisma.apiKey.findUnique({
           where: { userId_provider: { userId: session.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },

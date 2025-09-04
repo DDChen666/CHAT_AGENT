@@ -8,7 +8,7 @@ export interface Settings {
   }
   modelSettings: {
     temperature: number
-    defaultProvider: string
+    defaultProvider: 'gemini' | 'deepseek'
     defaultModel: string
   }
   systemPrompts: {

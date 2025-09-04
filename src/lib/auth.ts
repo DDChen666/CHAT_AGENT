@@ -30,14 +30,16 @@ export function verifyAuthToken(token: string): TokenPayload | null {
   }
 }
 
-export function getTokenPayloadFromCookies(): TokenPayload | null {
-  const token = cookies().get(AUTH_COOKIE_NAME)?.value
+export async function getTokenPayloadFromCookies(): Promise<TokenPayload | null> {
+  const jar = await cookies()
+  const token = jar.get(AUTH_COOKIE_NAME)?.value
   if (!token) return null
   return verifyAuthToken(token)
 }
 
-export function setAuthCookie(token: string) {
-  cookies().set({
+export async function setAuthCookie(token: string) {
+  const jar = await cookies()
+  jar.set({
     name: AUTH_COOKIE_NAME,
     value: token,
     httpOnly: true,
@@ -48,8 +50,9 @@ export function setAuthCookie(token: string) {
   })
 }
 
-export function clearAuthCookie() {
-  cookies().set({
+export async function clearAuthCookie() {
+  const jar = await cookies()
+  jar.set({
     name: AUTH_COOKIE_NAME,
     value: '',
     httpOnly: true,
@@ -59,4 +62,3 @@ export function clearAuthCookie() {
     maxAge: 0,
   })
 }
-

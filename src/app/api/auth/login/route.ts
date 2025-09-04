@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     const token = signAuthToken(user.id, user.isAdmin)
-    setAuthCookie(token)
+    await setAuthCookie(token)
 
     return Response.json({ user: { id: user.id, email: user.email, name: user.name, isAdmin: user.isAdmin } })
   } catch (error) {
@@ -34,4 +34,3 @@ export async function POST(request: Request) {
     return Response.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
-

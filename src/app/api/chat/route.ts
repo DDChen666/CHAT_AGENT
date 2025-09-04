@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     // Resolve API key precedence: body > stored per-user > env
     let effectiveKey = (apiKey || '').trim()
     if (!effectiveKey) {
-      const session = getTokenPayloadFromCookies()
+      const session = await getTokenPayloadFromCookies()
       if (session?.userId) {
         const rec = await prisma.apiKey.findUnique({
           where: { userId_provider: { userId: session.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // Optional persistence to DB if conversationId is provided and valid
     let validatedConversationId: string | null = null
     let lastUserMessageContent: string | null = null
-    const sessionForPersist = getTokenPayloadFromCookies()
+    const sessionForPersist = await getTokenPayloadFromCookies()
     if (conversationId && conversationId.trim()) {
       if (!sessionForPersist?.userId) {
         return Response.json({ message: 'Unauthorized (login required for persistence)' }, { status: 401 })
@@ -122,11 +122,10 @@ export async function POST(request: NextRequest) {
             }
 
             // 最終完成消息
-            type Msg = { role: 'user' | 'assistant' | 'system'; content: string }
             const doneMessage = {
               type: 'done',
               usage: {
-                prompt_tokens: Math.ceil((messages as Msg[]).reduce((sum: number, msg: Msg) => sum + msg.content.length, 0) / 4),
+                prompt_tokens: Math.ceil((messages as ChatMsg[]).reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
                 completion_tokens: Math.ceil(responseText.length / 4),
               },
             }
@@ -180,11 +179,10 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      type Msg = { role: 'user' | 'assistant' | 'system'; content: string }
       return Response.json({
         message: responseText,
         usage: {
-          prompt_tokens: Math.ceil((messages as Msg[]).reduce((sum: number, msg: Msg) => sum + msg.content.length, 0) / 4),
+          prompt_tokens: Math.ceil((messages as ChatMsg[]).reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
           completion_tokens: Math.ceil(responseText.length / 4),
         },
         provider,

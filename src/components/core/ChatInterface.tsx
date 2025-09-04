@@ -67,7 +67,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
     try {
       // Call the actual API
-      const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
+      const provider = modelSettings.defaultProvider
       const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
 
       const response = await fetch('/api/chat', {

@@ -5,7 +5,7 @@ import { getTokenPayloadFromCookies } from '@/lib/auth'
 
 export async function GET() {
   try {
-    const payload = getTokenPayloadFromCookies()
+    const payload = await getTokenPayloadFromCookies()
     if (!payload) {
       return Response.json({ user: null }, { status: 401 })
     }
@@ -25,4 +25,3 @@ export async function GET() {
     return Response.json({ message: 'Internal server error' }, { status: 500 })
   }
 }
-

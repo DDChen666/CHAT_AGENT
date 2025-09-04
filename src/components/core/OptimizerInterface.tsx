@@ -31,7 +31,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
 
     try {
       // Call the actual optimization API
-      const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
+      const provider = modelSettings.defaultProvider
       const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
 
       const response = await fetch('/api/optimize', {

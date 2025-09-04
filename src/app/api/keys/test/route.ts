@@ -38,7 +38,7 @@ async function tryGemini(key: string, model: string) {
 export async function GET(request: Request) {
   const url = new URL(request.url)
   const provider = (url.searchParams.get('provider') || '').toLowerCase()
-  const payload = getTokenPayloadFromCookies()
+  const payload = await getTokenPayloadFromCookies()
   if (!payload) return Response.json({ success: false, message: 'Unauthorized' }, { status: 401 })
   if (!['gemini', 'deepseek'].includes(provider)) return Response.json({ success: false, message: 'Invalid provider' }, { status: 400 })
 

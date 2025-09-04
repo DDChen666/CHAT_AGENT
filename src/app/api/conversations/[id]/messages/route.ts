@@ -10,7 +10,7 @@ const roles = ['USER', 'ASSISTANT', 'SYSTEM'] as const
 
 export async function POST(request: Request, context: any) {
   try {
-    const payload = getTokenPayloadFromCookies()
+    const payload = await getTokenPayloadFromCookies()
     if (!payload) return Response.json({ message: 'Unauthorized' }, { status: 401 })
 
     const { id } = (context?.params || {}) as { id: string }
