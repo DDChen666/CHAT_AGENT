@@ -1,4 +1,9 @@
+export const runtime = 'nodejs'
+
 import { NextRequest } from 'next/server'
+import prisma from '@/lib/prisma'
+import { getTokenPayloadFromCookies } from '@/lib/auth'
+import { callProvider } from '@/lib/providers'
 
 // 優化器邏輯
 class OptimizerClient {
@@ -47,13 +52,8 @@ class OptimizerClient {
 不要輸出任何 JSON 以外的內容。`
   }
 
-  async optimizePrompt(initialPrompt: string, provider: string) {
+  async optimizePrompt(initialPrompt: string, provider: string, apiKey?: string) {
     try {
-      const apiKey = process.env.GOOGLE_GEMINI_API_KEY
-      if (!apiKey) {
-        throw new Error('Gemini API key not configured')
-      }
-
       const optimizationPrompt = `${this.improverPrompt}
 
 請根據以上指導原則優化以下提示詞：
@@ -62,34 +62,8 @@ ${initialPrompt}
 """
 
 請提供優化後的版本，直接輸出優化後的提示詞內容，不要包含任何額外的解釋或評論。`
-
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: optimizationPrompt
-            }]
-          }]
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-      
-      if (!text) {
-        throw new Error('Gemini API returned empty response')
-      }
-
+      const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
+      const text = await callProvider(provider as any, model, [{ role: 'user', content: optimizationPrompt }], apiKey || '', { temperature: 0.3, maxTokens: 1024 })
       return text
     } catch (error) {
       console.error('Optimization API error:', error)
@@ -117,13 +91,8 @@ ${initialPrompt}
     return optimizedPrompt
   }
   
-  async generateReviewScores(prompt: string) {
+  async generateReviewScores(prompt: string, provider: string, apiKey?: string) {
     try {
-      const apiKey = process.env.GOOGLE_GEMINI_API_KEY
-      if (!apiKey) {
-        throw new Error('Gemini API key not configured')
-      }
-
       const reviewPrompt = `${this.criticPrompt}
 
 請評估以下提示詞：
@@ -132,33 +101,13 @@ ${prompt}
 """
 
 請只返回JSON格式的評分，不要添加任何其他內容。`
-
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: reviewPrompt
-            }]
-          }]
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const jsonResponse = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+      const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
+      const jsonResponse = await callProvider(provider as any, model, [{ role: 'user', content: reviewPrompt }], apiKey || '', { temperature: 0 })
+      const text = (jsonResponse || '').trim()
       
       // 嘗試解析JSON回應
       try {
-        return JSON.parse(jsonResponse)
+        return JSON.parse(text)
       } catch {
         // 如果解析失敗，返回模擬評分
         return this.generateSimulatedScores()
@@ -187,7 +136,8 @@ export async function POST(request: NextRequest) {
       initialPrompt, 
       iterations = 8, 
       threshold = 90, 
-      provider,
+      provider = 'gemini',
+      apiKey,
       systemPrompts
     } = body
 
@@ -196,6 +146,26 @@ export async function POST(request: NextRequest) {
       systemPrompts?.critic
     )
     
+    // Resolve API key (body > saved per-user > env)
+    let effectiveKey = (apiKey || '').trim()
+    if (!effectiveKey) {
+      const session = getTokenPayloadFromCookies()
+      if (session?.userId) {
+        const rec = await prisma.apiKey.findUnique({
+          where: { userId_provider: { userId: session.userId, provider: provider.toUpperCase() as any } },
+          select: { encryptedKey: true },
+        })
+        if (rec) {
+          const { decrypt } = await import('@/lib/crypto')
+          try { effectiveKey = decrypt(rec.encryptedKey) } catch {}
+        }
+      }
+    }
+    if (!effectiveKey) {
+      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
+      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
+    }
+
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
@@ -204,10 +174,10 @@ export async function POST(request: NextRequest) {
 
         for (let round = 1; round <= iterations; round++) {
           // Use the optimizer to improve the prompt
-          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, provider)
+          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, provider, effectiveKey)
           
           // Generate review scores
-          const scores = await optimizer.generateReviewScores(improvedPrompt) as Record<string, number>
+          const scores = await optimizer.generateReviewScores(improvedPrompt, provider, effectiveKey) as Record<string, number>
           
           const totalScore = Math.round(
             Object.values(scores).reduce((sum: number, score: number) => sum + score, 0) / Object.values(scores).length

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Save, TestTube } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
+import { ModelOptions } from '@/lib/providers'
 
 interface SettingsModalProps {
   open: boolean
@@ -24,6 +25,69 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   } = useSettingsStore()
 
   const [isTesting, setIsTesting] = useState(false)
+  const [status, setStatus] = useState<{ gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' }>({ gemini: 'unknown', deepseek: 'unknown' })
+
+  // Compute model list bound to provider
+  const availableModels = useMemo(() => {
+    const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
+    return ModelOptions[provider]
+  }, [modelSettings.defaultProvider])
+
+  // Ensure defaultModel belongs to current provider
+  useEffect(() => {
+    if (!availableModels.includes(modelSettings.defaultModel)) {
+      setModelSettings({ defaultModel: availableModels[0] })
+    }
+  }, [availableModels])
+
+  // Load saved keys and test status lights (server-saved keys)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/keys', { cache: 'no-store' })
+        if (!res.ok) throw new Error('failed')
+        const data = await res.json()
+        const map: Record<string, { hasKey: boolean }> = {}
+        for (const k of data.keys || []) { map[k.provider] = { hasKey: true } }
+        const next: any = { gemini: map.gemini ? 'fail' : 'missing', deepseek: map.deepseek ? 'fail' : 'missing' }
+        setStatus(next)
+
+        // Try server-side test for those present
+        await Promise.all(['gemini','deepseek'].map(async (p) => {
+          if (!map[p]) return
+          const r = await fetch(`/api/keys/test?provider=${p}`)
+          const ok = r.ok && (await r.json()).success
+          if (!cancelled) setStatus((s) => ({ ...s, [p]: ok ? 'ok' : 'fail' }))
+        }))
+      } catch {
+        // if fetch keys fails, keep unknown
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Also test currently typed keys (client-side) for quick feedback
+  useEffect(() => {
+    let aborted = false
+    ;(async () => {
+      for (const p of ['gemini','deepseek'] as const) {
+        const key = apiKeys[p]
+        if (!key) continue
+        try {
+          const r = await fetch('/api/test', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: p, apiKey: key })
+          })
+          const j = await r.json()
+          if (!aborted) setStatus((s) => ({ ...s, [p]: j.success ? 'ok' : 'fail' }))
+        } catch {
+          if (!aborted) setStatus((s) => ({ ...s, [p]: 'fail' }))
+        }
+      }
+    })()
+    return () => { aborted = true }
+  }, [apiKeys.gemini, apiKeys.deepseek])
 
   const handleSave = () => {
     // Settings are automatically saved to the store
@@ -47,12 +111,28 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       
       if (result.success) {
         alert(`✅ ${provider.toUpperCase()} API connection successful!\n${result.message}`)
+        // Save to server after success
+        const saveRes = await fetch('/api/keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider, apiKey })
+        })
+        if (saveRes.ok) {
+          const r = await fetch(`/api/keys/test?provider=${provider}`)
+          const ok = r.ok && (await r.json()).success
+          setStatus((s) => ({ ...s, [provider]: ok ? 'ok' : 'fail' }))
+        } else if (saveRes.status === 401) {
+          // Not logged in: keep green because key tested OK locally
+          setStatus((s) => ({ ...s, [provider]: 'ok' }))
+        }
       } else {
         alert(`❌ ${provider.toUpperCase()} API connection failed:\n${result.message}`)
+        setStatus((s) => ({ ...s, [provider]: 'fail' }))
       }
     } catch (error) {
       console.error('Connection test failed:', error)
       alert(`❌ ${provider.toUpperCase()} API connection test failed: Network error`)
+      setStatus((s) => ({ ...s, [provider]: 'fail' }))
     } finally {
       setIsTesting(false)
     }
@@ -112,6 +192,30 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
           </DialogTitle>
         </DialogHeader>
 
+        {/* Status lights */}
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          {(['gemini','deepseek'] as const).map((p) => (
+            <div key={p} className="flex items-center gap-2">
+              <span className={cn(
+                'inline-block w-2.5 h-2.5 rounded-full',
+                status[p] === 'ok' && 'bg-green-500',
+                status[p] === 'fail' && 'bg-red-500',
+                status[p] === 'missing' && 'bg-gray-400',
+                status[p] === 'unknown' && 'bg-yellow-400'
+              )} />
+              <span className="text-sm">
+                {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {status[p] === 'ok' && 'Connected'}
+                {status[p] === 'fail' && 'Key invalid or error'}
+                {status[p] === 'missing' && 'No key saved'}
+                {status[p] === 'unknown' && 'Checking...'}
+              </span>
+            </div>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
           {/* API Keys Section */}
           <div className="space-y-4">
@@ -120,14 +224,14 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             {/* Gemini */}
             <div>
               <label className="block text-sm font-medium mb-2">
-                Gemini API Key
+                Gemini AI Studio API Key
               </label>
               <div className="flex gap-2">
                 <input
                   type="password"
                   value={apiKeys.gemini}
                   onChange={(e) => setApiKey('gemini', e.target.value)}
-                  placeholder="Enter your Gemini API key"
+                  placeholder="Enter your Gemini AI Studio API key"
                   className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <button
@@ -203,8 +307,9 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
                 className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
               >
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="deepseek-chat">DeepSeek Chat</option>
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
               </select>
             </div>
 

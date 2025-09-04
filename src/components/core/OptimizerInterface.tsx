@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Play, Square, Copy, RotateCcw, Clipboard } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
+import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -12,6 +13,7 @@ interface OptimizerInterfaceProps {
 
 export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
   const { optimizerStates, setOptimizerInitialPrompt, addOptimizerRound, setOptimizerBestResult } = useAppStore()
+  const { modelSettings, apiKeys } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [currentRound, setCurrentRound] = useState(0)
@@ -29,6 +31,9 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
 
     try {
       // Call the actual optimization API
+      const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
+      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
       const response = await fetch('/api/optimize', {
         method: 'POST',
         headers: {
@@ -38,7 +43,8 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           initialPrompt: input.trim(),
           iterations: 8,
           threshold: 90,
-          provider: 'gemini',
+          provider,
+          apiKey: selectedKey || undefined,
         }),
       })
 

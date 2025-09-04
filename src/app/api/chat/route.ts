@@ -1,92 +1,66 @@
+export const runtime = 'nodejs'
+
 import { NextRequest } from 'next/server'
-
-// AI API 客戶端實現
-interface ChatMessage {
-  role: string
-  content: string
-}
-
-class AIClient {
-
-  private async callGeminiAPI(messages: ChatMessage[]) {
-    try {
-      const apiKey = process.env.GOOGLE_GEMINI_API_KEY
-      if (!apiKey) {
-        throw new Error('Gemini API key not configured')
-      }
-
-      // 轉換消息格式為 Gemini 格式，包含完整的對話歷史
-      const contents = messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.content }]
-      }))
-
-      // 使用標準 API 調用（無緩存）
-      const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({ contents }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-      
-      if (!text) {
-        throw new Error('Gemini API returned empty response')
-      }
-
-      return text
-    } catch (error) {
-      console.error('Gemini API error:', error)
-      throw new Error('Failed to call Gemini API')
-    }
-  }
-
-  private async callDeepSeekAPI(messages: ChatMessage[]) {
-    try {
-      // DeepSeek API 實現（暫時保持模擬）
-      const lastMessage = messages[messages.length - 1]?.content || ''
-      return `這是來自 DeepSeek 的回應：${lastMessage}`
-    } catch (error) {
-      console.error('DeepSeek API error:', error)
-      throw new Error('Failed to call DeepSeek API')
-    }
-  }
-
-  async generateResponse(provider: string, messages: ChatMessage[]) {
-    switch (provider) {
-      case 'gemini':
-        return this.callGeminiAPI(messages)
-      case 'deepseek':
-        return this.callDeepSeekAPI(messages)
-      default:
-        throw new Error(`不支持的提供商: ${provider}`)
-    }
-  }
-}
+import prisma from '@/lib/prisma'
+import { getTokenPayloadFromCookies } from '@/lib/auth'
+import { callProvider, type ChatMessage as ChatMsg } from '@/lib/providers'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { provider, messages, stream } = body
+    const { provider, model, messages, stream, temperature, maxTokens, apiKey } = body as {
+      provider: 'gemini' | 'deepseek'
+      model?: string
+      messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
+      stream?: boolean
+      temperature?: number
+      maxTokens?: number
+      apiKey?: string
+    }
 
-    const aiClient = new AIClient()
+    if (!provider || !Array.isArray(messages)) {
+      return Response.json({ message: 'Invalid payload' }, { status: 400 })
+    }
+
+    const chosenModel = model && model.trim()
+      ? model.trim()
+      : provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
+
+    // Resolve API key precedence: body > stored per-user > env
+    let effectiveKey = (apiKey || '').trim()
+    if (!effectiveKey) {
+      const session = getTokenPayloadFromCookies()
+      if (session?.userId) {
+        const rec = await prisma.apiKey.findUnique({
+          where: { userId_provider: { userId: session.userId, provider: provider.toUpperCase() as any } },
+          select: { encryptedKey: true },
+        })
+        if (rec) {
+          const { decrypt } = await import('@/lib/crypto')
+          try { effectiveKey = decrypt(rec.encryptedKey) } catch {}
+        }
+      }
+    }
+    if (!effectiveKey) {
+      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
+      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
+    }
+    if (!effectiveKey) {
+      return Response.json({ message: `No API key for ${provider}` }, { status: 400 })
+    }
     
     if (stream) {
       const encoder = new TextEncoder()
       const readableStream = new ReadableStream({
         async start(controller) {
           try {
-            // 獲取實際的 AI 回應
-            const responseText = await aiClient.generateResponse(provider, messages)
+            const responseText = await callProvider(
+              provider,
+              chosenModel,
+              messages as ChatMsg[],
+              effectiveKey,
+              { temperature, maxTokens }
+            )
             
             // 模擬逐字流式傳輸
             for (let i = 0; i < responseText.length; i++) {
@@ -107,7 +81,7 @@ export async function POST(request: NextRequest) {
             const doneMessage = {
               type: 'done',
               usage: {
-                prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: ChatMessage) => sum + msg.content.length, 0) / 4),
+                prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0) / 4),
                 completion_tokens: Math.ceil(responseText.length / 4),
               },
             }
@@ -142,14 +116,22 @@ export async function POST(request: NextRequest) {
 
     // 非流式回應
     try {
-      const responseText = await aiClient.generateResponse(provider, messages)
+      const responseText = await callProvider(
+        provider,
+        chosenModel,
+        messages as ChatMsg[],
+        effectiveKey,
+        { temperature, maxTokens }
+      )
       
       return Response.json({
         message: responseText,
         usage: {
-          prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: ChatMessage) => sum + msg.content.length, 0) / 4),
+          prompt_tokens: Math.ceil(messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0) / 4),
           completion_tokens: Math.ceil(responseText.length / 4),
         },
+        provider,
+        model: chosenModel,
       })
     } catch (error) {
       console.error('Non-streaming error:', error)

@@ -15,7 +15,7 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ tabId }: ChatInterfaceProps) {
   const { chatStates, addChatMessage, updateChatMessage } = useAppStore()
-  const { features } = useSettingsStore()
+  const { features, modelSettings, apiKeys } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
@@ -67,18 +67,22 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
     try {
       // Call the actual API
+      const provider = modelSettings.defaultProvider as 'gemini'|'deepseek'
+      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          provider: 'gemini',
-          model: 'gemini-2.5-flash',
+          provider,
+          model: modelSettings.defaultModel,
           messages: [...messages, { role: 'user', content: userMessage }],
-          temperature: 0.3,
+          temperature: modelSettings.temperature,
           stream: true,
           enableCache: features.enableGeminiCache,
+          apiKey: selectedKey || undefined,
         }),
         signal: controller.signal,
       })
