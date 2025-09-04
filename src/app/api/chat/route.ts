@@ -8,7 +8,7 @@ import { callProvider, type ChatMessage as ChatMsg } from '@/lib/providers'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { provider, model, messages, stream, temperature, maxTokens, apiKey } = body as {
+    const { provider, model, messages, stream, temperature, maxTokens, apiKey, conversationId } = body as {
       provider: 'gemini' | 'deepseek'
       model?: string
       messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>
@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
       temperature?: number
       maxTokens?: number
       apiKey?: string
+      conversationId?: string
     }
 
     if (!provider || !Array.isArray(messages)) {
@@ -48,7 +49,37 @@ export async function POST(request: NextRequest) {
     if (!effectiveKey) {
       return Response.json({ message: `No API key for ${provider}` }, { status: 400 })
     }
-    
+    // Optional persistence to DB if conversationId is provided and valid
+    let validatedConversationId: string | null = null
+    let lastUserMessageContent: string | null = null
+    const sessionForPersist = getTokenPayloadFromCookies()
+    if (conversationId && conversationId.trim()) {
+      if (!sessionForPersist?.userId) {
+        return Response.json({ message: 'Unauthorized (login required for persistence)' }, { status: 401 })
+      }
+      const conv = await prisma.conversation.findFirst({ where: { id: conversationId.trim(), userId: sessionForPersist.userId }, select: { id: true } })
+      if (!conv) {
+        return Response.json({ message: 'Conversation not found' }, { status: 404 })
+      }
+      validatedConversationId = conv.id
+      // Find the latest user message content from provided messages
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i]
+        if (m.role === 'user' && m.content?.trim()) { lastUserMessageContent = m.content.trim(); break }
+      }
+      if (lastUserMessageContent) {
+        try {
+          await prisma.message.create({
+            data: { conversationId: validatedConversationId, role: 'USER' as any, content: lastUserMessageContent },
+            select: { id: true },
+          })
+          await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
+        } catch (e) {
+          console.error('Persist user message failed:', e)
+        }
+      }
+    }
+
     if (stream) {
       const encoder = new TextEncoder()
       const readableStream = new ReadableStream({
@@ -61,6 +92,18 @@ export async function POST(request: NextRequest) {
               effectiveKey,
               { temperature, maxTokens }
             )
+            // Persist assistant message after generating the full text
+            if (validatedConversationId && responseText) {
+              try {
+                await prisma.message.create({
+                  data: { conversationId: validatedConversationId, role: 'ASSISTANT' as any, content: responseText },
+                  select: { id: true },
+                })
+                await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
+              } catch (e) {
+                console.error('Persist assistant message failed:', e)
+              }
+            }
             
             // 模擬逐字流式傳輸
             for (let i = 0; i < responseText.length; i++) {
@@ -123,6 +166,17 @@ export async function POST(request: NextRequest) {
         effectiveKey,
         { temperature, maxTokens }
       )
+      if (validatedConversationId && responseText) {
+        try {
+          await prisma.message.create({
+            data: { conversationId: validatedConversationId, role: 'ASSISTANT' as any, content: responseText },
+            select: { id: true },
+          })
+          await prisma.conversation.update({ where: { id: validatedConversationId }, data: { updatedAt: new Date() } })
+        } catch (e) {
+          console.error('Persist assistant message failed:', e)
+        }
+      }
       
       return Response.json({
         message: responseText,
@@ -132,6 +186,7 @@ export async function POST(request: NextRequest) {
         },
         provider,
         model: chosenModel,
+        conversationId: validatedConversationId || undefined,
       })
     } catch (error) {
       console.error('Non-streaming error:', error)
