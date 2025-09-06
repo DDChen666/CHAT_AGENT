@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   images: {
     domains: ['localhost'],
-    unoptimized: true, // 臨時禁用圖片優化來測試
+    // 圖片已優化，可以重新啟用優化
   },
   /* config options here */
 };
