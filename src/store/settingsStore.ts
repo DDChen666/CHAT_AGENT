@@ -124,21 +124,21 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       testConnections: async () => {
-        // Get current state first
-        let currentState: any
-        set((state) => {
-          currentState = state
-          return state // Return unchanged state
-        })
-
         const results: { gemini: boolean; deepseek: boolean } = {
           gemini: false,
           deepseek: false,
         }
 
+        // Get current state
+        let currentApiKeys: Settings['apiKeys']
+        set((state) => {
+          currentApiKeys = state.apiKeys
+          return state
+        })
+
         const providers = [
-          { name: 'deepseek' as const, hasKey: !!currentState.apiKeys.deepseek },
-          { name: 'gemini' as const, hasKey: !!currentState.apiKeys.gemini }
+          { name: 'deepseek' as const, hasKey: !!currentApiKeys!.deepseek },
+          { name: 'gemini' as const, hasKey: !!currentApiKeys!.gemini }
         ]
 
         for (const provider of providers) {

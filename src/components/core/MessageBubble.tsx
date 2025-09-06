@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 interface MessageBubbleProps {
   message: ChatMessage
+  showTokenUsage?: boolean
 }
 
 export default function MessageBubble({ message }: MessageBubbleProps) {

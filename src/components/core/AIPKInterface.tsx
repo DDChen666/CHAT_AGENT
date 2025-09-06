@@ -45,7 +45,7 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
   useEffect(() => {
     if (chats.length === 1 && chats[0].provider === 'openai') {
       // Update to use settings default
-      updateAIPKChatModel(chats[0].id, modelSettings.defaultModel, modelSettings.defaultProvider)
+      updateAIPKChatModel(tabId, chats[0].id, modelSettings.defaultModel, modelSettings.defaultProvider)
     }
   }, [chats, modelSettings])
 
