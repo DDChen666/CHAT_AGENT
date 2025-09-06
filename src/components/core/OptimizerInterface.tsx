@@ -293,12 +293,16 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
                     </div>
                     
                     <div className="space-y-2 mb-4">
-                      {Object.entries(round.review.scores).map(([category, score]) => (
-                        <div key={category} className="flex items-center justify-between text-sm">
-                          <span className="capitalize text-muted-foreground">{category}:</span>
-                          <span className="font-medium">{score}/100</span>
-                        </div>
-                      ))}
+                      {Object.entries(round.review.scores || {}).map(([category, score]) => {
+                        // Ensure score is a number
+                        const numericScore = typeof score === 'number' ? score : 0
+                        return (
+                          <div key={category} className="flex items-center justify-between text-sm">
+                            <span className="capitalize text-muted-foreground">{category}:</span>
+                            <span className="font-medium">{numericScore}/100</span>
+                          </div>
+                        )
+                      })}
                     </div>
                     
                     <div className="space-y-1">

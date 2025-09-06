@@ -2,7 +2,8 @@ export type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: stri
 
 export type ProviderName = 'gemini' | 'deepseek'
 
-export const ModelOptions: Record<ProviderName, string[]> = {
+// Static fallback models (used when API calls fail)
+export const FallbackModelOptions: Record<ProviderName, string[]> = {
   gemini: [
     'gemini-2.5-pro',
     'gemini-2.5-flash',
@@ -16,6 +17,27 @@ export const ModelOptions: Record<ProviderName, string[]> = {
     'deepseek-reasoner',
   ],
 }
+
+// Dynamic model cache
+interface ModelCache {
+  models: Record<ProviderName, string[]>
+  timestamp: number
+  ttl: number // Time to live in milliseconds
+}
+
+let modelCache: ModelCache | null = null
+const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
+
+// Get current model options (dynamic with fallback to static)
+export function getModelOptions(): Record<ProviderName, string[]> {
+  if (modelCache && Date.now() - modelCache.timestamp < modelCache.ttl) {
+    return modelCache.models
+  }
+  return FallbackModelOptions
+}
+
+// Export for backward compatibility
+export const ModelOptions = FallbackModelOptions
 
 type GenConfig = { temperature?: number; maxTokens?: number }
 
@@ -95,4 +117,116 @@ async function callDeepSeek(model: string, messages: ChatMessage[], apiKey: stri
   const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.message?.reasoning_content
   if (!text) throw new Error('DeepSeek returned empty response')
   return text
+}
+
+// Dynamic model fetching functions
+async function fetchGeminiModels(apiKey?: string): Promise<string[]> {
+  if (!apiKey) {
+    console.warn('No Gemini API key provided for dynamic model fetching, using fallback')
+    return FallbackModelOptions.gemini
+  }
+
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-goog-api-key': apiKey,
+      },
+    })
+
+    if (!res.ok) {
+      console.warn(`Gemini models API failed with status ${res.status}, using fallback`)
+      return FallbackModelOptions.gemini
+    }
+
+    const data = await res.json()
+    const models = data.models || []
+
+    // Filter for text generation models and extract model names
+    const textModels = models
+      .filter((model: { supportedGenerationMethods?: string[] }) => model.supportedGenerationMethods?.includes('generateContent'))
+      .map((model: { name?: string }) => model.name?.replace('models/', '') || '')
+      .filter((name: string) => name && name.startsWith('gemini-'))
+      .sort()
+
+    if (textModels.length === 0) {
+      console.warn('No valid Gemini models found in API response, using fallback')
+      return FallbackModelOptions.gemini
+    }
+
+    return textModels
+  } catch (error) {
+    console.warn('Failed to fetch Gemini models:', error)
+    return FallbackModelOptions.gemini
+  }
+}
+
+async function fetchDeepSeekModels(apiKey?: string): Promise<string[]> {
+  if (!apiKey) {
+    console.warn('No DeepSeek API key provided for dynamic model fetching, using fallback')
+    return FallbackModelOptions.deepseek
+  }
+
+  try {
+    const res = await fetch('https://api.deepseek.com/models', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+    })
+
+    if (!res.ok) {
+      console.warn(`DeepSeek models API failed with status ${res.status}, using fallback`)
+      return FallbackModelOptions.deepseek
+    }
+
+    const data = await res.json()
+    const models = data.data || []
+
+    // Extract model IDs from the response
+    const modelIds = models
+      .map((model: { id?: string }) => model.id || '')
+      .filter((id: string) => id && id.startsWith('deepseek-'))
+      .sort()
+
+    if (modelIds.length === 0) {
+      console.warn('No valid DeepSeek models found in API response, using fallback')
+      return FallbackModelOptions.deepseek
+    }
+
+    return modelIds
+  } catch (error) {
+    console.warn('Failed to fetch DeepSeek models:', error)
+    return FallbackModelOptions.deepseek
+  }
+}
+
+// Main function to refresh dynamic models
+export async function refreshDynamicModels(apiKeys?: { gemini?: string; deepseek?: string }): Promise<Record<ProviderName, string[]>> {
+  try {
+    const [geminiModels, deepseekModels] = await Promise.allSettled([
+      fetchGeminiModels(apiKeys?.gemini),
+      fetchDeepSeekModels(apiKeys?.deepseek),
+    ])
+
+    const models: Record<ProviderName, string[]> = {
+      gemini: geminiModels.status === 'fulfilled' ? geminiModels.value : FallbackModelOptions.gemini,
+      deepseek: deepseekModels.status === 'fulfilled' ? deepseekModels.value : FallbackModelOptions.deepseek,
+    }
+
+    // Update cache
+    modelCache = {
+      models,
+      timestamp: Date.now(),
+      ttl: CACHE_TTL,
+    }
+
+    console.log('Dynamic models refreshed successfully')
+    return models
+  } catch (error) {
+    console.warn('Failed to refresh dynamic models, using fallback:', error)
+    return FallbackModelOptions
+  }
 }

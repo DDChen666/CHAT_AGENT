@@ -6,7 +6,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function generateId(): string {
-  return Math.random().toString(36).substring(2, 15)
+  // Use crypto.randomUUID if available (modern browsers), otherwise fallback to timestamp-based ID
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  // Fallback for SSR compatibility - use timestamp + random for uniqueness
+  return `id_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
 }
 
 export function debounce<T extends (...args: unknown[]) => unknown>(

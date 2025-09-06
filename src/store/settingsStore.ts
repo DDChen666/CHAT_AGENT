@@ -14,6 +14,7 @@ export interface Settings {
   systemPrompts: {
     improver: string
     critic: string
+    chat: string
   }
   features: {
     showTokenUsage: boolean
@@ -65,7 +66,7 @@ const defaultSettings: Settings = {
 1.  **比較**: 將\`待審核的 Prompt\`與用戶的\`初始需求\`進行比較，確保核心目標一致。
 2.  **評分**: 根據上述五個維度，獨立打分。
 3.  **計算總分**: \`overall_score\` 是五個維度分數的加權平均值 (原意符合度權重最高，例如 40%，其餘各 15%)。
-4.  **提供回饋**: 
+4.  **提供回饋**:
     - \`feedback_summary\`: 用一句話總結你的整體看法。
     - \`actionable_suggestions\`: 提供 2-3 條具體的、可立即執行的修改建議，用於指導下一個版本的改進。
 
@@ -78,6 +79,7 @@ const defaultSettings: Settings = {
 }
 
 不要輸出任何 JSON 以外的內容。`,
+    chat: '請輸出繁體中文',
   },
   features: {
     showTokenUsage: true,

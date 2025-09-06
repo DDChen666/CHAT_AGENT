@@ -1,15 +1,60 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Save, TestTube } from 'lucide-react'
+import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
-import { ModelOptions } from '@/lib/providers'
+import { getModelOptions, refreshDynamicModels, type ProviderName } from '@/lib/providers'
 
 interface SettingsModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+}
+
+interface CollapsibleSectionProps {
+  title: string
+  icon: React.ReactNode
+  defaultExpanded?: boolean
+  children: React.ReactNode
+}
+
+function CollapsibleSection({ title, icon, defaultExpanded = false, children }: CollapsibleSectionProps) {
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded)
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between p-4 bg-muted/50 hover:bg-muted transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0 text-primary">
+            {icon}
+          </div>
+          <h4 className="text-sm font-semibold text-left">{title}</h4>
+        </div>
+        <div className="flex-shrink-0 transition-transform duration-200">
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          )}
+        </div>
+      </button>
+
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-300 ease-in-out",
+          isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+        )}
+      >
+        <div className="p-4 bg-background">
+          {children}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
@@ -26,11 +71,13 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   const [isTesting, setIsTesting] = useState(false)
   const [status, setStatus] = useState<{ gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' }>({ gemini: 'unknown', deepseek: 'unknown' })
+  const [dynamicModels, setDynamicModels] = useState<Record<ProviderName, string[]>>(getModelOptions())
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false)
 
   // Compute model list bound to provider
   const availableModels = useMemo(() => {
-    return ModelOptions[modelSettings.defaultProvider]
-  }, [modelSettings.defaultProvider])
+    return dynamicModels[modelSettings.defaultProvider] || []
+  }, [dynamicModels, modelSettings.defaultProvider])
 
   // Ensure defaultModel belongs to current provider
   useEffect(() => {
@@ -38,6 +85,29 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       setModelSettings({ defaultModel: availableModels[0] })
     }
   }, [availableModels, modelSettings.defaultModel, setModelSettings])
+
+  // Refresh dynamic models when modal opens
+  useEffect(() => {
+    if (!open) return
+
+    const refreshModels = async () => {
+      setIsRefreshingModels(true)
+      try {
+        const updatedModels = await refreshDynamicModels({
+          gemini: apiKeys.gemini,
+          deepseek: apiKeys.deepseek,
+        })
+        setDynamicModels(updatedModels)
+      } catch (error) {
+        console.warn('Failed to refresh models in settings modal:', error)
+        // Keep existing models if refresh fails
+      } finally {
+        setIsRefreshingModels(false)
+      }
+    }
+
+    refreshModels()
+  }, [open, apiKeys.gemini, apiKeys.deepseek])
 
   // Load saved keys and test status lights (server-saved keys)
   useEffect(() => {
@@ -144,7 +214,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     }
   }
 
-  const restoreDefaultPrompt = (promptType: 'improver' | 'critic') => {
+  const restoreDefaultPrompt = (promptType: 'improver' | 'critic' | 'chat') => {
     const defaultPrompts = {
       improver: `你是一位世界頂尖的 Prompt 工程專家，你的任務是將一個簡單的用戶需求，轉化為一個結構化、功能強大、細節豐富的 Prompt。
 
@@ -171,7 +241,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 1.  **比較**: 將\`待審核的 Prompt\`與用戶的\`初始需求\`進行比較，確保核心目標一致。
 2.  **評分**: 根據上述五個維度，獨立打分。
 3.  **計算總分**: \`overall_score\` 是五個維度分數的加權平均值 (原意符合度權重最高，例如 40%，其餘各 15%)。
-4.  **提供回饋**: 
+4.  **提供回饋**:
     - \`feedback_summary\`: 用一句話總結你的整體看法。
     - \`actionable_suggestions\`: 提供 2-3 條具體的、可立即執行的修改建議，用於指導下一個版本的改進。
 
@@ -183,9 +253,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   "actionable_suggestions": ["string1", "string2", ...]
 }
 
-不要輸出任何 JSON 以外的內容。`
+不要輸出任何 JSON 以外的內容。`,
+      chat: '請輸出繁體中文'
     }
-    
+
     setSystemPrompt(promptType, defaultPrompts[promptType])
   }
 
@@ -222,173 +293,268 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
           ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
+        <div className="space-y-4 py-4">
           {/* API Keys Section */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold mb-4">API Keys</h3>
-            
-            {/* Gemini */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Gemini AI Studio API Key
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={apiKeys.gemini}
-                  onChange={(e) => setApiKey('gemini', e.target.value)}
-                  placeholder="Enter your Gemini AI Studio API key"
-                  className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <button
-                  onClick={() => handleTestConnection('gemini')}
-                  disabled={!apiKeys.gemini || isTesting}
-                  className={cn(
-                    'px-3 py-2 border border-border rounded-lg transition-colors',
-                    apiKeys.gemini && !isTesting
-                      ? 'hover:bg-accent'
-                      : 'opacity-50 cursor-not-allowed'
-                  )}
-                >
-                  <TestTube className="w-4 h-4" />
-                </button>
+          <CollapsibleSection
+            title="API Keys"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H7l5-4-5-4h4l2.257-2.257A6 6 0 0119 9z" />
+              </svg>
+            }
+            defaultExpanded={true}
+          >
+            <div className="space-y-4">
+              {/* Gemini */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Gemini AI Studio API Key
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={apiKeys.gemini}
+                    onChange={(e) => setApiKey('gemini', e.target.value)}
+                    placeholder="Enter your Gemini AI Studio API key"
+                    className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    onClick={() => handleTestConnection('gemini')}
+                    disabled={!apiKeys.gemini || isTesting}
+                    className={cn(
+                      'px-3 py-2 border border-border rounded-lg transition-colors',
+                      apiKeys.gemini && !isTesting
+                        ? 'hover:bg-accent'
+                        : 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    <TestTube className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* DeepSeek */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                DeepSeek API Key
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={apiKeys.deepseek}
-                  onChange={(e) => setApiKey('deepseek', e.target.value)}
-                  placeholder="Enter your DeepSeek API key"
-                  className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <button
-                  onClick={() => handleTestConnection('deepseek')}
-                  disabled={!apiKeys.deepseek || isTesting}
-                  className={cn(
-                    'px-3 py-2 border border-border rounded-lg transition-colors',
-                    apiKeys.deepseek && !isTesting
-                      ? 'hover:bg-accent'
-                      : 'opacity-50 cursor-not-allowed'
-                  )}
-                >
-                  <TestTube className="w-4 h-4" />
-                </button>
+              {/* DeepSeek */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  DeepSeek API Key
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={apiKeys.deepseek}
+                    onChange={(e) => setApiKey('deepseek', e.target.value)}
+                    placeholder="Enter your DeepSeek API key"
+                    className="flex-1 px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <button
+                    onClick={() => handleTestConnection('deepseek')}
+                    disabled={!apiKeys.deepseek || isTesting}
+                    className={cn(
+                      'px-3 py-2 border border-border rounded-lg transition-colors',
+                      apiKeys.deepseek && !isTesting
+                        ? 'hover:bg-accent'
+                        : 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    <TestTube className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Model Settings */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold mb-4">Model Settings</h3>
-            
-            {/* Default Provider */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Default Provider
-              </label>
-              <select
-                value={modelSettings.defaultProvider}
-                onChange={(e) => setModelSettings({ defaultProvider: e.target.value as 'gemini' | 'deepseek' })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="gemini">Gemini</option>
-                <option value="deepseek">DeepSeek</option>
-              </select>
-            </div>
+          <CollapsibleSection
+            title="Model Settings"
+            icon={
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            }
+            defaultExpanded={true}
+          >
+            <div className="space-y-4">
+              {/* Default Provider */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Default Provider
+                </label>
+                <select
+                  value={modelSettings.defaultProvider}
+                  onChange={(e) => setModelSettings({ defaultProvider: e.target.value as 'gemini' | 'deepseek' })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="gemini">Gemini</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </div>
 
-            {/* Default Model */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Default Model
-              </label>
-              <select
-                value={modelSettings.defaultModel}
-                onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                {availableModels.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
+              {/* Default Model */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium">
+                    Default Model
+                  </label>
+                  <button
+                    onClick={async () => {
+                      setIsRefreshingModels(true)
+                      try {
+                        const updatedModels = await refreshDynamicModels({
+                          gemini: apiKeys.gemini,
+                          deepseek: apiKeys.deepseek,
+                        })
+                        setDynamicModels(updatedModels)
+                      } catch (error) {
+                        console.warn('Failed to refresh models:', error)
+                      } finally {
+                        setIsRefreshingModels(false)
+                      }
+                    }}
+                    disabled={isRefreshingModels}
+                    className={cn(
+                      'p-1 rounded-md transition-colors',
+                      isRefreshingModels
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+                    )}
+                    title="Refresh available models"
+                  >
+                    <RefreshCw className={cn(
+                      'w-4 h-4',
+                      isRefreshingModels && 'animate-spin'
+                    )} />
+                  </button>
+                </div>
+                <select
+                  value={modelSettings.defaultModel}
+                  onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {availableModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Temperature */}
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Temperature: {modelSettings.temperature}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={modelSettings.temperature}
-                onChange={(e) => setModelSettings({ temperature: parseFloat(e.target.value) })}
-                className="w-full"
-              />
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>More deterministic</span>
-                <span>More creative</span>
+              {/* Temperature */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Temperature: {modelSettings.temperature}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={modelSettings.temperature}
+                  onChange={(e) => setModelSettings({ temperature: parseFloat(e.target.value) })}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>More deterministic</span>
+                  <span>More creative</span>
+                </div>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
         </div>
 
         {/* System Prompts Section */}
         <div>
           <h3 className="text-lg font-semibold mb-4">System Prompts</h3>
-          
-          <div className="space-y-4">
-            {/* Improver Prompt */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium">
-                  Improver Prompt
-                </label>
-                <button
-                  onClick={() => restoreDefaultPrompt('improver')}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Restore Default
-                </button>
-              </div>
-              <textarea
-                value={systemPrompts.improver}
-                onChange={(e) => setSystemPrompt('improver', e.target.value)}
-                rows={8}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                placeholder="Enter Improver system prompt"
-              />
-            </div>
 
-            {/* Critic Prompt */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium">
-                  Critic Prompt
-                </label>
-                <button
-                  onClick={() => restoreDefaultPrompt('critic')}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Restore Default
-                </button>
+          <div className="space-y-4">
+            {/* Prompt Optimizer Category */}
+            <CollapsibleSection
+              title="Prompt Optimizer"
+              icon={
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              }
+              defaultExpanded={false}
+            >
+              <div className="space-y-4 pl-6">
+                {/* Improver Prompt */}
+                <div className="border-l-2 border-primary/20 pl-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-primary">
+                      Improver Prompt
+                    </label>
+                    <button
+                      onClick={() => restoreDefaultPrompt('improver')}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Restore Default
+                    </button>
+                  </div>
+                  <textarea
+                    value={systemPrompts.improver}
+                    onChange={(e) => setSystemPrompt('improver', e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                    placeholder="Enter Improver system prompt"
+                  />
+                </div>
+
+                {/* Critic Prompt */}
+                <div className="border-l-2 border-primary/20 pl-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-primary">
+                      Critic Prompt
+                    </label>
+                    <button
+                      onClick={() => restoreDefaultPrompt('critic')}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Restore Default
+                    </button>
+                  </div>
+                  <textarea
+                    value={systemPrompts.critic}
+                    onChange={(e) => setSystemPrompt('critic', e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                    placeholder="Enter Critic system prompt"
+                  />
+                </div>
               </div>
-              <textarea
-                value={systemPrompts.critic}
-                onChange={(e) => setSystemPrompt('critic', e.target.value)}
-                rows={8}
-                className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                placeholder="Enter Critic system prompt"
-              />
-            </div>
+            </CollapsibleSection>
+
+            {/* Chat Category */}
+            <CollapsibleSection
+              title="Chat"
+              icon={
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              }
+              defaultExpanded={false}
+            >
+              <div className="space-y-4 pl-6">
+                {/* Chat System Prompt */}
+                <div className="border-l-2 border-green-500/20 pl-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-green-600">
+                      Chat System Prompt
+                    </label>
+                    <button
+                      onClick={() => setSystemPrompt('chat', '請輸出繁體中文')}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Restore Default
+                    </button>
+                  </div>
+                  <textarea
+                    value={systemPrompts.chat || '請輸出繁體中文'}
+                    onChange={(e) => setSystemPrompt('chat', e.target.value)}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
+                    placeholder="請輸出繁體中文"
+                  />
+                </div>
+              </div>
+            </CollapsibleSection>
           </div>
         </div>
 
