@@ -15,7 +15,7 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ tabId }: ChatInterfaceProps) {
   const { chatStates, addChatMessage, updateChatMessage } = useAppStore()
-  const { features, modelSettings, apiKeys } = useSettingsStore()
+  const { features, modelSettings, apiKeys, systemPrompts } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
@@ -78,7 +78,11 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
         body: JSON.stringify({
           provider,
           model: modelSettings.defaultModel,
-          messages: [...messages, { role: 'user', content: userMessage }],
+          messages: [
+            ...(systemPrompts.chat ? [{ role: 'system' as const, content: systemPrompts.chat }] : []),
+            ...messages,
+            { role: 'user' as const, content: userMessage }
+          ],
           temperature: modelSettings.temperature,
           stream: true,
           enableCache: features.enableGeminiCache,
