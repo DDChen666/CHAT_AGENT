@@ -25,7 +25,7 @@ export default function AppLayout() {
         <div className="h-12 flex items-center justify-end px-4 gap-2 border-b border-border">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-accent border border-border"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-accent border border-border transition-all duration-200 btn-smooth"
             title="Settings"
           >
             <SettingsIcon className="w-4 h-4" />

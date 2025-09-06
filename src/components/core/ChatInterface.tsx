@@ -238,7 +238,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
             <button
               type="button"
               onClick={stopStreaming}
-              className="px-4 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors"
+              className="px-4 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-all duration-200 btn-smooth"
               aria-label="Stop generating"
             >
               <StopCircle className="w-5 h-5" />
@@ -248,9 +248,9 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
               type="submit"
               disabled={!input.trim()}
               className={cn(
-                'px-4 py-3 rounded-lg transition-colors',
+                'px-4 py-3 rounded-lg transition-all duration-200',
                 input.trim()
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 btn-smooth'
                   : 'bg-muted text-muted-foreground cursor-not-allowed'
               )}
               aria-label="Send message"
