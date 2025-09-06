@@ -20,6 +20,11 @@ export interface Settings {
     showTokenUsage: boolean
     enableGeminiCache: boolean
   }
+  connectionStatus: {
+    gemini: boolean
+    deepseek: boolean
+    lastTested: number
+  }
 }
 
 interface SettingsState extends Settings {
@@ -27,6 +32,7 @@ interface SettingsState extends Settings {
   setModelSettings: (settings: Partial<Settings['modelSettings']>) => void
   setSystemPrompt: (type: keyof Settings['systemPrompts'], prompt: string) => void
   setFeature: (feature: keyof Settings['features'], enabled: boolean) => void
+  testConnections: () => Promise<void>
   resetToDefaults: () => void
 }
 
@@ -79,11 +85,16 @@ const defaultSettings: Settings = {
 }
 
 不要輸出任何 JSON 以外的內容。`,
-    chat: '請輸出繁體中文',
+    chat: '請輸出繁體中文回覆',
   },
   features: {
     showTokenUsage: true,
     enableGeminiCache: true,
+  },
+  connectionStatus: {
+    gemini: false,
+    deepseek: false,
+    lastTested: 0,
   },
 }
 
@@ -111,6 +122,44 @@ export const useSettingsStore = create<SettingsState>()(
         set((state) => ({
           features: { ...state.features, [feature]: enabled },
         })),
+
+      testConnections: async () => {
+        // Get current state first
+        let currentState: any
+        set((state) => {
+          currentState = state
+          return state // Return unchanged state
+        })
+
+        const results: { gemini: boolean; deepseek: boolean } = {
+          gemini: false,
+          deepseek: false,
+        }
+
+        const providers = [
+          { name: 'deepseek' as const, hasKey: !!currentState.apiKeys.deepseek },
+          { name: 'gemini' as const, hasKey: !!currentState.apiKeys.gemini }
+        ]
+
+        for (const provider of providers) {
+          if (provider.hasKey) {
+            try {
+              const response = await fetch(`/api/keys/test?provider=${provider.name}`)
+              const data = await response.json()
+              results[provider.name] = data.success || false
+            } catch {
+              results[provider.name] = false
+            }
+          }
+        }
+
+        set((state) => ({
+          connectionStatus: {
+            ...results,
+            lastTested: Date.now(),
+          },
+        }))
+      },
 
       resetToDefaults: () => set(defaultSettings),
     }),

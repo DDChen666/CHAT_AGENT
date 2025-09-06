@@ -82,10 +82,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (stream) {
+      console.log('Starting streaming response for provider:', provider, 'model:', chosenModel)
       const encoder = new TextEncoder()
       const readableStream = new ReadableStream({
         async start(controller) {
           try {
+            console.log('Calling provider with messages:', messages.length, 'messages')
             const responseText = await callProvider(
               provider as ProviderName,
               chosenModel,
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
               effectiveKey,
               { temperature, maxTokens }
             )
+            console.log('Provider response received, length:', responseText.length)
             // Persist assistant message after generating the full text
             if (validatedConversationId && responseText) {
               try {
@@ -106,32 +109,26 @@ export async function POST(request: NextRequest) {
               }
             }
             
-            // 模擬逐字流式傳輸
+            // 模擬逐字流式傳輸，使用 OpenAI 兼容格式
             for (let i = 0; i < responseText.length; i++) {
               const chunk = {
-                type: 'chunk',
-                id: 'response',
-                delta: responseText[i],
+                choices: [{
+                  delta: {
+                    content: responseText[i]
+                  }
+                }]
               }
-              
+
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(chunk)}\n\n`)
               )
-              
+
               await new Promise(resolve => setTimeout(resolve, 20))
             }
 
-            // 最終完成消息
-            const doneMessage = {
-              type: 'done',
-              usage: {
-                prompt_tokens: Math.ceil((messages as ChatMsg[]).reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
-                completion_tokens: Math.ceil(responseText.length / 4),
-              },
-            }
-            
+            // 最終完成消息，使用 OpenAI 兼容格式
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(doneMessage)}\n\n`)
+              encoder.encode(`data: [DONE]\n\n`)
             )
             
           } catch (error) {

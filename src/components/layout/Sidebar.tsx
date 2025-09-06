@@ -6,9 +6,10 @@ import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
 import SettingsModal from '../settings/SettingsModal'
 import Image from 'next/image'
+import AIPKIcon from '../ui/AIPKIcon'
 
 export default function Sidebar() {
-  const { tabs, activeTab, setActiveTab, closeTab, createChatTab, createOptimizerTab } = useAppStore()
+  const { tabs, activeTab, setActiveTab, closeTab, createChatTab, createOptimizerTab, createAIPKTab } = useAppStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -18,6 +19,10 @@ export default function Sidebar() {
 
   const handleNewOptimizer = () => {
     createOptimizerTab()
+  }
+
+  const handleNewAIPK = () => {
+    createAIPKTab()
   }
 
   const toggleSidebar = () => {
@@ -59,6 +64,13 @@ export default function Sidebar() {
             title="New Optimizer"
           >
             <Sparkles className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleNewAIPK}
+            className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+            title="New AI PK"
+          >
+            <AIPKIcon className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -104,6 +116,14 @@ export default function Sidebar() {
         >
           <Sparkles className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">Prompt Optimizer</span>
+        </button>
+        <button
+          onClick={handleNewAIPK}
+          className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+          title="New AI PK"
+        >
+          <AIPKIcon className="w-4 h-4 flex-shrink-0" />
+          <span className="text-sm">AI PK</span>
         </button>
 
         {/* Separator */}

@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import { useAppStore } from '@/store/appStore'
 import ChatInterface from '../core/ChatInterface'
 import OptimizerInterface from '../core/OptimizerInterface'
+import AIPKInterface from '../core/AIPKInterface'
 import HomeView from './HomeView'
 import { useState } from 'react'
 import AvatarButton from '@/components/ui/AvatarButton'
@@ -36,8 +37,12 @@ export default function AppLayout() {
           <HomeView />
         ) : activeTabData.type === 'chat' ? (
           <ChatInterface tabId={activeTabData.id} />
-        ) : (
+        ) : activeTabData.type === 'optimizer' ? (
           <OptimizerInterface tabId={activeTabData.id} />
+        ) : activeTabData.type === 'aipk' ? (
+          <AIPKInterface tabId={activeTabData.id} />
+        ) : (
+          <HomeView />
         )}
         <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         <AuthModal open={authOpen} onOpenChange={setAuthOpen} />
