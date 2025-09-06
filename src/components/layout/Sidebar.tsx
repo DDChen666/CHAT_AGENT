@@ -40,7 +40,7 @@ export default function Sidebar() {
             title="Expand Sidebar"
           >
             <Image
-              src="/logo.png"
+              src="/logo_optimized.png"
               alt="Synapse Logo"
               width={32}
               height={32}
@@ -83,7 +83,7 @@ export default function Sidebar() {
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
           <Image
-            src="/logo.png"
+            src="/logo_optimized.png"
             alt="Synapse Logo"
             width={32}
             height={32}
