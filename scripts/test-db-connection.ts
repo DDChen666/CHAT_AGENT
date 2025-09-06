@@ -6,6 +6,38 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import { readFileSync, existsSync } from 'fs'
+import { join } from 'path'
+
+// 載入環境變數
+function loadEnvFile() {
+  const envPath = join(process.cwd(), '.env.local')
+  if (existsSync(envPath)) {
+    try {
+      const envContent = readFileSync(envPath, 'utf8')
+      const lines = envContent.split('\n')
+
+      for (const line of lines) {
+        const trimmedLine = line.trim()
+        if (trimmedLine && !trimmedLine.startsWith('#')) {
+          const [key, ...valueParts] = trimmedLine.split('=')
+          if (key && valueParts.length > 0) {
+            const value = valueParts.join('=').replace(/^["']|["']$/g, '') // 移除引號
+            process.env[key.trim()] = value.trim()
+          }
+        }
+      }
+      console.log('✅ 已載入 .env.local 檔案')
+    } catch (error) {
+      console.warn('⚠️  無法載入 .env.local 檔案:', error)
+    }
+  } else {
+    console.warn('⚠️  .env.local 檔案不存在')
+  }
+}
+
+// 載入環境變數
+loadEnvFile()
 
 async function testDatabaseConnection() {
   console.log('🔍 測試資料庫連接...')
@@ -24,7 +56,9 @@ async function testDatabaseConnection() {
 
     for (const table of tables) {
       try {
-        await prisma.$queryRaw`SELECT COUNT(*) as count FROM "${table}"`
+        // 使用模板标签函数的正确方式
+        const query = `SELECT COUNT(*) as count FROM "${table}"`
+        await prisma.$queryRawUnsafe(query)
         console.log(`✅ ${table} 表訪問正常`)
       } catch (error) {
         console.log(`⚠️  ${table} 表訪問異常:`, error instanceof Error ? error.message : String(error))

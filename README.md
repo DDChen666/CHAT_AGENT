@@ -1,6 +1,17 @@
 # 🤖 CHAT_AGENT - AI 聊天機器人平台
 
-基於 Next.js + Prisma + PostgreSQL + Vercel 構建的現代化聊天機器人應用程式。
+基於 Next.js + Prisma + PostgreSQL + Vercel 構建的現代化聊天機器人應用程式，支援多個 AI 模型並提供進階的 Prompt 優化功能。
+
+## ✨ 主要功能
+
+- 🎯 **多模型支援**: Gemini 2.5, DeepSeek 等主流 AI 模型
+- 🔄 **動態模型更新**: 自動同步最新的可用模型列表
+- ⚡ **Prompt 優化器**: AI 驅動的提示詞優化工具
+- 🎨 **現代化 UI**: 可展開的設定面板，順滑的動畫效果
+- 🔐 **安全認證**: JWT 認證系統
+- 📱 **響應式設計**: 支援桌面和移動端
+- 🎭 **多主題支援**: 深色/淺色模式
+- 💾 **本地儲存**: Zustand 狀態管理
 
 ## 🚀 快速開始
 
@@ -102,18 +113,44 @@ npm run clean
 src/
 ├── app/                    # Next.js App Router
 │   ├── api/               # API 路由
+│   │   ├── auth/          # 認證 API
+│   │   ├── chat/          # 聊天 API
+│   │   ├── conversations/ # 對話管理 API
+│   │   ├── keys/          # API 金鑰測試 API
+│   │   ├── models/        # 模型列表 API
+│   │   ├── optimize/      # Prompt 優化 API
+│   │   └── test/          # API 測試 API
 │   ├── globals.css        # 全域樣式
+│   ├── layout.tsx         # 根佈局
 │   └── page.tsx          # 首頁
 ├── components/            # React 元件
 │   ├── auth/             # 認證元件
+│   │   └── AuthModal.tsx
 │   ├── core/             # 核心功能元件
+│   │   ├── ChatInterface.tsx
+│   │   ├── MessageBubble.tsx
+│   │   ├── OptimizerInterface.tsx
+│   │   └── ThinkingAnimation.tsx
 │   ├── layout/           # 佈局元件
+│   │   ├── AppLayout.tsx
+│   │   ├── HomeView.tsx
+│   │   └── Sidebar.tsx
+│   ├── settings/         # 設定元件
+│   │   └── SettingsModal.tsx
 │   └── ui/               # UI 元件
+│       ├── AvatarButton.tsx
+│       └── Dialog.tsx
 ├── lib/                  # 工具函數和設定
-│   ├── prisma.ts         # 資料庫客戶端
+│   ├── api.ts            # API 客戶端
 │   ├── auth.ts           # 認證邏輯
-│   └── api.ts            # API 客戶端
+│   ├── crypto.ts         # 加密工具
+│   ├── prisma.ts         # 資料庫客戶端
+│   ├── providers.ts      # AI 模型提供者
+│   ├── stream.ts         # 串流處理
+│   └── utils.ts          # 通用工具
 └── store/                # 狀態管理
+    ├── appStore.ts       # 應用狀態
+    └── settingsStore.ts  # 設定狀態
 
 prisma/
 ├── schema.prisma         # 資料庫結構
@@ -122,7 +159,18 @@ prisma/
 
 scripts/
 └── test-db-connection.ts # 資料庫測試腳本
+
+public/
+├── manifest.json        # PWA 配置
+├── sw.js               # Service Worker
+└── *.svg               # 圖標資源
 ```
+
+### 📋 專案文檔
+
+- [DATABASE_WORKFLOW.md](./DATABASE_WORKFLOW.md) - 資料庫開發工作流程
+- [DEPLOYMENT完整開發工作流程.md](./DEPLOYMENT完整開發工作流程.md) - 完整部署指南
+- [DEVELOPMENT_CHECKLIST.md](./DEVELOPMENT_CHECKLIST.md) - 開發檢查清單
 
 ## 🔐 環境變數
 
@@ -177,7 +225,8 @@ npm run deploy  # 快速提交並推送
 - [Next.js 文檔](https://nextjs.org/docs)
 - [Prisma 文檔](https://www.prisma.io/docs)
 - [Vercel 文檔](https://vercel.com/docs)
-- [部署指南](./DEPLOYMENT.md)
+- [資料庫工作流程](./DATABASE_WORKFLOW.md)
+- [完整部署指南](./DEPLOYMENT完整開發工作流程.md)
 - [開發檢查清單](./DEVELOPMENT_CHECKLIST.md)
 
 ## 🤝 貢獻
