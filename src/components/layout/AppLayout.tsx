@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import { useAppStore } from '@/store/appStore'
 import ChatInterface from '../core/ChatInterface'
 import OptimizerInterface from '../core/OptimizerInterface'
+import AIPKInterface from '../core/AIPKInterface'
 import HomeView from './HomeView'
 import { useState } from 'react'
 import AvatarButton from '@/components/ui/AvatarButton'
@@ -25,7 +26,7 @@ export default function AppLayout() {
         <div className="h-12 flex items-center justify-end px-4 gap-2 border-b border-border">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-accent border border-border"
+            className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-accent border border-border transition-all duration-200 btn-smooth"
             title="Settings"
           >
             <SettingsIcon className="w-4 h-4" />
@@ -36,8 +37,12 @@ export default function AppLayout() {
           <HomeView />
         ) : activeTabData.type === 'chat' ? (
           <ChatInterface tabId={activeTabData.id} />
-        ) : (
+        ) : activeTabData.type === 'optimizer' ? (
           <OptimizerInterface tabId={activeTabData.id} />
+        ) : activeTabData.type === 'aipk' ? (
+          <AIPKInterface tabId={activeTabData.id} />
+        ) : (
+          <HomeView />
         )}
         <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
         <AuthModal open={authOpen} onOpenChange={setAuthOpen} />

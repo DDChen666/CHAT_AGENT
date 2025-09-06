@@ -63,14 +63,15 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     modelSettings,
     systemPrompts,
     features,
+    connectionStatus,
     setApiKey,
     setModelSettings,
     setSystemPrompt,
     setFeature,
+    testConnections,
   } = useSettingsStore()
 
   const [isTesting, setIsTesting] = useState(false)
-  const [status, setStatus] = useState<{ gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' }>({ gemini: 'unknown', deepseek: 'unknown' })
   const [dynamicModels, setDynamicModels] = useState<Record<ProviderName, string[]>>(getModelOptions())
   const [isRefreshingModels, setIsRefreshingModels] = useState(false)
 
@@ -107,63 +108,17 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     }
 
     refreshModels()
+    // Also test connections when modal opens
+    if (open) {
+      console.log('Testing connections on modal open...')
+      testConnections().then(() => {
+        console.log('Connection test completed')
+      }).catch((error) => {
+        console.error('Connection test failed:', error)
+      })
+    }
   }, [open, apiKeys.gemini, apiKeys.deepseek])
 
-  // Load saved keys and test status lights (server-saved keys)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch('/api/keys', { cache: 'no-store' })
-        if (!res.ok) throw new Error('failed')
-        const data = await res.json()
-        const map: Record<'gemini'|'deepseek', { hasKey: boolean } | undefined> = { gemini: undefined, deepseek: undefined }
-        for (const k of (data.keys || []) as Array<{ provider: 'gemini'|'deepseek' }>) { map[k.provider] = { hasKey: true } }
-        const next: { gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' } = {
-          gemini: map.gemini ? 'fail' : 'missing',
-          deepseek: map.deepseek ? 'fail' : 'missing'
-        }
-        setStatus(next)
-
-        // Try server-side test for those present
-        const providers = ['gemini','deepseek'] as const
-        await Promise.all(providers.map(async (p) => {
-          if (!map[p]) return
-          const r = await fetch(`/api/keys/test?provider=${p}`)
-          const ok = r.ok && (await r.json()).success
-          if (!cancelled) setStatus((s) => ({ ...s, [p]: ok ? 'ok' : 'fail' }))
-        }))
-      } catch {
-        // if fetch keys fails, keep unknown
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
-
-  // Also test currently typed keys (client-side) for quick feedback
-  useEffect(() => {
-    let aborted = false
-    ;(async () => {
-      const { gemini: geminiKey, deepseek: deepseekKey } = apiKeys
-      const toTest: Array<['gemini'|'deepseek', string]> = []
-      if (geminiKey) toTest.push(['gemini', geminiKey])
-      if (deepseekKey) toTest.push(['deepseek', deepseekKey])
-      for (const [p, key] of toTest) {
-        if (!key) continue
-        try {
-          const r = await fetch('/api/test', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: p, apiKey: key })
-          })
-          const j = await r.json()
-          if (!aborted) setStatus((s) => ({ ...s, [p]: j.success ? 'ok' : 'fail' }))
-        } catch {
-          if (!aborted) setStatus((s) => ({ ...s, [p]: 'fail' }))
-        }
-      }
-    })()
-    return () => { aborted = true }
-  }, [apiKeys])
 
   const handleSave = () => {
     // Settings are automatically saved to the store
@@ -171,6 +126,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   }
 
   const handleTestConnection = async (provider: string) => {
+    console.log(`Testing connection for ${provider}...`)
     setIsTesting(true)
     try {
       const apiKey = apiKeys[provider as keyof typeof apiKeys]
@@ -194,21 +150,18 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
           body: JSON.stringify({ provider, apiKey })
         })
         if (saveRes.ok) {
-          const r = await fetch(`/api/keys/test?provider=${provider}`)
-          const ok = r.ok && (await r.json()).success
-          setStatus((s) => ({ ...s, [provider]: ok ? 'ok' : 'fail' }))
+          // Connection saved successfully, testConnections will update the status
+          await testConnections()
         } else if (saveRes.status === 401) {
           // Not logged in: keep green because key tested OK locally
-          setStatus((s) => ({ ...s, [provider]: 'ok' }))
+          alert(`✅ ${provider.toUpperCase()} API key saved locally`)
         }
       } else {
         alert(`❌ ${provider.toUpperCase()} API connection failed:\n${result.message}`)
-        setStatus((s) => ({ ...s, [provider]: 'fail' }))
       }
     } catch (error) {
       console.error('Connection test failed:', error)
       alert(`❌ ${provider.toUpperCase()} API connection test failed: Network error`)
-      setStatus((s) => ({ ...s, [provider]: 'fail' }))
     } finally {
       setIsTesting(false)
     }
@@ -254,7 +207,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 }
 
 不要輸出任何 JSON 以外的內容。`,
-      chat: '請輸出繁體中文'
+      chat: '請輸出繁體中文回覆'
     }
 
     setSystemPrompt(promptType, defaultPrompts[promptType])
@@ -275,19 +228,19 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             <div key={p} className="flex items-center gap-2">
               <span className={cn(
                 'inline-block w-2.5 h-2.5 rounded-full',
-                status[p] === 'ok' && 'bg-green-500',
-                status[p] === 'fail' && 'bg-red-500',
-                status[p] === 'missing' && 'bg-gray-400',
-                status[p] === 'unknown' && 'bg-yellow-400'
+                connectionStatus[p] && 'bg-green-500',
+                !connectionStatus[p] && 'bg-red-500'
               )} />
               <span className="text-sm">
                 {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
               </span>
               <span className="text-xs text-muted-foreground">
-                {status[p] === 'ok' && 'Connected'}
-                {status[p] === 'fail' && 'Key invalid or error'}
-                {status[p] === 'missing' && 'No key saved'}
-                {status[p] === 'unknown' && 'Checking...'}
+                {connectionStatus[p] ? 'Connected' : 'Not connected'}
+                {connectionStatus.lastTested && (
+                  <span className="ml-1">
+                    ({new Date(connectionStatus.lastTested).toLocaleTimeString()})
+                  </span>
+                )}
               </span>
             </div>
           ))}
@@ -539,18 +492,18 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                       Chat System Prompt
                     </label>
                     <button
-                      onClick={() => setSystemPrompt('chat', '請輸出繁體中文')}
+                      onClick={() => setSystemPrompt('chat', '請輸出繁體中文回覆')}
                       className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
                       Restore Default
                     </button>
                   </div>
                   <textarea
-                    value={systemPrompts.chat || '請輸出繁體中文'}
+                    value={systemPrompts.chat || '請輸出繁體中文回覆'}
                     onChange={(e) => setSystemPrompt('chat', e.target.value)}
                     rows={4}
                     className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
-                    placeholder="請輸出繁體中文"
+                    placeholder="請輸出繁體中文回覆"
                   />
                 </div>
               </div>
