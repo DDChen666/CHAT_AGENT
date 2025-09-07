@@ -246,38 +246,42 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            Settings
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="w-[95vw] max-w-[600px] max-h-[90vh] flex flex-col h-[90vh] !grid-cols-none !gap-0">
+        {/* Fixed Header and Status */}
+        <div className="flex-shrink-0 space-y-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Settings
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Status lights */}
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          {(['gemini','deepseek'] as const).map((p) => (
-            <div key={p} className="flex items-center gap-2">
-              <span className={cn(
-                'inline-block w-2.5 h-2.5 rounded-full',
-                connectionStatus[p] && 'bg-green-500',
-                !connectionStatus[p] && 'bg-red-500'
-              )} />
-              <span className="text-sm">
-                {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {connectionStatus[p] ? 'Connected' : 'Not connected'}
-                {connectionStatus.lastTested && (
-                  <span className="ml-1">
-                    ({new Date(connectionStatus.lastTested).toLocaleTimeString()})
-                  </span>
-                )}
-              </span>
-            </div>
-          ))}
+          {/* Status lights - Fixed at top */}
+          <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
+            {(['gemini','deepseek'] as const).map((p) => (
+              <div key={p} className="flex items-center gap-2">
+                <span className={cn(
+                  'inline-block w-2.5 h-2.5 rounded-full',
+                  connectionStatus[p] && 'bg-green-500',
+                  !connectionStatus[p] && 'bg-red-500'
+                )} />
+                <span className="text-sm">
+                  {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {connectionStatus[p] ? 'Connected' : 'Not connected'}
+                  {connectionStatus.lastTested && (
+                    <span className="ml-1">
+                      ({new Date(connectionStatus.lastTested).toLocaleTimeString()})
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-4 py-4">
+        {/* Scrollable content area - Everything below status lights */}
+        <div className="flex-1 overflow-y-auto pr-2 space-y-3 py-3">
           {/* API Keys Section */}
           <CollapsibleSection
             title="API Keys"
@@ -502,172 +506,172 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               </div>
             </div>
           </CollapsibleSection>
-        </div>
 
-        {/* System Prompts Section */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">System Prompts</h3>
+          {/* System Prompts Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">System Prompts</h3>
 
-          <div className="space-y-4">
-            {/* Prompt Optimizer Category */}
-            <CollapsibleSection
-              title="Prompt Optimizer"
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              }
-              defaultExpanded={false}
-            >
-              <div className="space-y-4 pl-6">
-                {/* Improver Prompt */}
-                <div className="border-l-2 border-primary/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-primary">
-                      Improver Prompt
-                    </label>
-                    <button
-                      onClick={() => restoreDefaultPrompt('improver')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+            <div className="space-y-4">
+              {/* Prompt Optimizer Category */}
+              <CollapsibleSection
+                title="Prompt Optimizer"
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                }
+                defaultExpanded={false}
+              >
+                <div className="space-y-4 pl-6">
+                  {/* Improver Prompt */}
+                  <div className="border-l-2 border-primary/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-primary">
+                        Improver Prompt
+                      </label>
+                      <button
+                        onClick={() => restoreDefaultPrompt('improver')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.improver}
+                      onChange={(e) => setSystemPrompt('improver', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                      placeholder="Enter Improver system prompt"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.improver}
-                    onChange={(e) => setSystemPrompt('improver', e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                    placeholder="Enter Improver system prompt"
-                  />
-                </div>
 
-                {/* Critic Prompt */}
-                <div className="border-l-2 border-primary/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-primary">
-                      Critic Prompt
-                    </label>
-                    <button
-                      onClick={() => restoreDefaultPrompt('critic')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+                  {/* Critic Prompt */}
+                  <div className="border-l-2 border-primary/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-primary">
+                        Critic Prompt
+                      </label>
+                      <button
+                        onClick={() => restoreDefaultPrompt('critic')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.critic}
+                      onChange={(e) => setSystemPrompt('critic', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                      placeholder="Enter Critic system prompt"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.critic}
-                    onChange={(e) => setSystemPrompt('critic', e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                    placeholder="Enter Critic system prompt"
-                  />
                 </div>
-              </div>
-            </CollapsibleSection>
+              </CollapsibleSection>
 
-            {/* Chat Category */}
-            <CollapsibleSection
-              title="Chat"
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              }
-              defaultExpanded={false}
-            >
-              <div className="space-y-4 pl-6">
-                {/* Chat System Prompt */}
-                <div className="border-l-2 border-green-500/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-green-600">
-                      Chat System Prompt
-                    </label>
-                    <button
-                      onClick={() => setSystemPrompt('chat', '請輸出繁體中文回覆')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+              {/* Chat Category */}
+              <CollapsibleSection
+                title="Chat"
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                }
+                defaultExpanded={false}
+              >
+                <div className="space-y-4 pl-6">
+                  {/* Chat System Prompt */}
+                  <div className="border-l-2 border-green-500/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-green-600">
+                        Chat System Prompt
+                      </label>
+                      <button
+                        onClick={() => setSystemPrompt('chat', '請輸出繁體中文回覆')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.chat || '請輸出繁體中文回覆'}
+                      onChange={(e) => setSystemPrompt('chat', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
+                      placeholder="請輸出繁體中文回覆"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.chat || '請輸出繁體中文回覆'}
-                    onChange={(e) => setSystemPrompt('chat', e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
-                    placeholder="請輸出繁體中文回覆"
-                  />
                 </div>
-              </div>
-            </CollapsibleSection>
-          </div>
-        </div>
-
-        {/* Feature Toggles */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Features</h3>
-          
-          <div className="space-y-3">
-            {/* Show Token Usage */}
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Show Token Usage
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Display token counts in chat interface
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={features.showTokenUsage}
-                  onChange={(e) => setFeature('showTokenUsage', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-
-            {/* Enable Gemini Cache */}
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Enable Gemini Cache
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Use caching to reduce API costs (Gemini only)
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={features.enableGeminiCache}
-                  onChange={(e) => setFeature('enableGeminiCache', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
+              </CollapsibleSection>
             </div>
           </div>
-        </div>
 
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
-          <button
-            onClick={() => onOpenChange(false)}
-            className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
-          >
-            Cancel
-          </button>
-          
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            Save Settings
-          </button>
+          {/* Feature Toggles */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Features</h3>
+
+            <div className="space-y-3">
+              {/* Show Token Usage */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Show Token Usage
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Display token counts in chat interface
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={features.showTokenUsage}
+                    onChange={(e) => setFeature('showTokenUsage', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              {/* Enable Gemini Cache */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Enable Gemini Cache
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Use caching to reduce API costs (Gemini only)
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={features.enableGeminiCache}
+                    onChange={(e) => setFeature('enableGeminiCache', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer Actions - Inside scrollable area */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+            <button
+              onClick={() => onOpenChange(false)}
+              className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
+            >
+              Cancel
+            </button>
+
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              Save Settings
+            </button>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

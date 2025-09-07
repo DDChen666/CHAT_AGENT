@@ -111,21 +111,29 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6)
+
+                // Skip the [DONE] signal
+                if (dataStr === '[DONE]') {
+                  continue
+                }
+
                 try {
-                  const data = JSON.parse(line.slice(6))
-                  
-                  if (data.type === 'chunk' && data.delta) {
-                    assistantMessage += data.delta
-                    
+                  const data = JSON.parse(dataStr)
+
+                  // Handle OpenAI-compatible format
+                  if (data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content) {
+                    assistantMessage += data.choices[0].delta.content
+
                     // Update the last message with streaming content
                     if (assistantMessageId) {
                       // Update existing assistant message
                       updateChatMessage(tabId, assistantMessageId, assistantMessage)
                     } else {
                       // Create new assistant message on first chunk
-                      assistantMessageId = addChatMessage(tabId, { 
-                        role: 'assistant', 
-                        content: assistantMessage 
+                      assistantMessageId = addChatMessage(tabId, {
+                        role: 'assistant',
+                        content: assistantMessage
                       })
                     }
                   }
