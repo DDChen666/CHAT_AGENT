@@ -416,12 +416,12 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
       </div>
 
       {/* 右侧聊天窗口区域 */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex overflow-x-auto">
         {chats.map((chat, index) => (
           <div
             key={chat.id}
             className={cn(
-              'flex-1 border-r border-border last:border-r-0 flex flex-col',
+              'flex-1 border-r border-border last:border-r-0 flex flex-col min-w-[400px]',
               chats.length === 1 && 'flex-1',
               chats.length === 2 && 'flex-1',
               chats.length === 3 && 'flex-1',

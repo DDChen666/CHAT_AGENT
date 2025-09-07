@@ -14,7 +14,7 @@ interface SyncResult {
 
 export interface Tab {
   id: string
-  type: 'chat' | 'optimizer' | 'aipk'
+  type: 'chat' | 'optimizer' | 'aipk' | 'file2file'
   title: string
   createdAt: number
   updatedAt: number
@@ -64,6 +64,16 @@ export interface OptimizerState {
   }
 }
 
+export interface File2FileState {
+  tabId: string
+  inputText: string
+  isConverting: boolean
+  isDownloading: boolean
+  error: string | null
+  success: boolean
+  lastConvertedAt?: number
+}
+
 interface AppState {
   // Tabs management
   tabs: Tab[]
@@ -98,6 +108,15 @@ interface AppState {
   updateAIPKMessage: (tabId: string, chatId: string, messageId: string, content: string) => void
   setAIPKChatLoading: (tabId: string, chatId: string, isLoading: boolean) => void
 
+  // File2File states
+  file2fileStates: Record<string, File2FileState>
+  setFile2FileInputText: (tabId: string, inputText: string) => void
+  setFile2FileConverting: (tabId: string, isConverting: boolean) => void
+  setFile2FileDownloading: (tabId: string, isDownloading: boolean) => void
+  setFile2FileError: (tabId: string, error: string | null) => void
+  setFile2FileSuccess: (tabId: string, success: boolean) => void
+  createFile2FileTab: () => void
+
   // Sync functionality
   syncToServer: (forceOverwrite?: boolean) => Promise<SyncResult | undefined>
   loadFromServer: () => Promise<void>
@@ -114,6 +133,7 @@ export const useAppStore = create<AppState>()(
       chatStates: {},
       optimizerStates: {},
       aipkStates: {},
+      file2fileStates: {},
       syncStatus: 'idle' as const,
       lastSyncAt: null,
 
@@ -204,6 +224,33 @@ export const useAppStore = create<AppState>()(
         }))
       },
 
+      createFile2FileTab: () => {
+        const tabId = generateId()
+        const newTab: Tab = {
+          id: tabId,
+          type: 'file2file',
+          title: 'File to File',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+
+        set((state) => ({
+          tabs: [...state.tabs, newTab],
+          activeTab: tabId,
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              tabId,
+              inputText: '',
+              isConverting: false,
+              isDownloading: false,
+              error: null,
+              success: false,
+            },
+          },
+        }))
+      },
+
       closeTab: (tabId) => {
         set((state) => {
           const newTabs = state.tabs.filter(tab => tab.id !== tabId)
@@ -220,12 +267,16 @@ export const useAppStore = create<AppState>()(
           const newAIPKStates = { ...state.aipkStates }
           delete newAIPKStates[tabId]
 
+          const newFile2FileStates = { ...state.file2fileStates }
+          delete newFile2FileStates[tabId]
+
           return {
             tabs: newTabs,
             activeTab: newActiveTab,
             chatStates: newChatStates,
             optimizerStates: newOptimizerStates,
             aipkStates: newAIPKStates,
+            file2fileStates: newFile2FileStates,
           }
         })
       },
@@ -470,6 +521,71 @@ export const useAppStore = create<AppState>()(
         })
       },
 
+      setFile2FileInputText: (tabId, inputText) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              inputText,
+              error: null,
+              success: false,
+            },
+          },
+        }))
+      },
+
+      setFile2FileConverting: (tabId, isConverting) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              isConverting,
+            },
+          },
+        }))
+      },
+
+      setFile2FileDownloading: (tabId, isDownloading) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              isDownloading,
+            },
+          },
+        }))
+      },
+
+      setFile2FileError: (tabId, error) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              error,
+              success: false,
+            },
+          },
+        }))
+      },
+
+      setFile2FileSuccess: (tabId, success) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              success,
+              error: null,
+              lastConvertedAt: success ? Date.now() : undefined,
+            },
+          },
+        }))
+      },
+
       // Sync functionality
       setSyncStatus: (syncStatus) => set({ syncStatus }),
 
@@ -566,6 +682,7 @@ export const useAppStore = create<AppState>()(
         chatStates: state.chatStates,
         optimizerStates: state.optimizerStates,
         aipkStates: state.aipkStates,
+        file2fileStates: state.file2fileStates,
         // 不持久化同步狀態
       }),
     }

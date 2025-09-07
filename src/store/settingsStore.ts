@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { initializeSync, resetSync } from '@/lib/syncManager'
 
 interface SyncResult {
   conflict?: boolean

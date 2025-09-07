@@ -3,9 +3,10 @@
 import { MessageSquare, Sparkles } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import AIPKIcon from '../ui/AIPKIcon'
+import FileToFileIcon from '../ui/FileToFileIcon'
 
 export default function HomeView() {
-  const { createChatTab, createOptimizerTab, createAIPKTab } = useAppStore()
+  const { createChatTab, createOptimizerTab, createAIPKTab, createFile2FileTab } = useAppStore()
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8">
@@ -15,7 +16,7 @@ export default function HomeView() {
           An elegant AI conversation and prompt engineering tool with iOS-inspired design
         </p>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             onClick={createChatTab}
             className="flex flex-col items-center p-6 border border-border rounded-lg hover:border-primary transition-all duration-200 btn-smooth group"
@@ -41,6 +42,15 @@ export default function HomeView() {
             <AIPKIcon className="w-8 h-8 text-primary mb-3 group-hover:scale-110 transition-transform duration-200" />
             <span className="font-medium text-foreground">AI PK</span>
             <span className="text-sm text-muted-foreground mt-1">Compare AI models</span>
+          </button>
+
+          <button
+            onClick={createFile2FileTab}
+            className="flex flex-col items-center p-6 border border-border rounded-lg hover:border-primary transition-all duration-200 btn-smooth group"
+          >
+            <FileToFileIcon className="w-8 h-8 text-primary mb-3 group-hover:scale-110 transition-transform duration-200" />
+            <span className="font-medium text-foreground">File to File</span>
+            <span className="text-sm text-muted-foreground mt-1">Convert Markdown to DOCX</span>
           </button>
         </div>
 

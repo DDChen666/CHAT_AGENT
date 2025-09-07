@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils'
 import SettingsModal from '../settings/SettingsModal'
 import Image from 'next/image'
 import AIPKIcon from '../ui/AIPKIcon'
+import FileToFileIcon from '../ui/FileToFileIcon'
 
 export default function Sidebar() {
-  const { tabs, activeTab, setActiveTab, closeTab, createChatTab, createOptimizerTab, createAIPKTab } = useAppStore()
+  const { tabs, activeTab, setActiveTab, closeTab, createChatTab, createOptimizerTab, createAIPKTab, createFile2FileTab } = useAppStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
@@ -23,6 +24,10 @@ export default function Sidebar() {
 
   const handleNewAIPK = () => {
     createAIPKTab()
+  }
+
+  const handleNewFile2File = () => {
+    createFile2FileTab()
   }
 
   const toggleSidebar = () => {
@@ -71,6 +76,13 @@ export default function Sidebar() {
             title="New AI PK"
           >
             <AIPKIcon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleNewFile2File}
+            className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+            title="New File to File"
+          >
+            <FileToFileIcon className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -125,6 +137,14 @@ export default function Sidebar() {
           <AIPKIcon className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">AI PK</span>
         </button>
+        <button
+          onClick={handleNewFile2File}
+          className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+          title="New File to File"
+        >
+          <FileToFileIcon className="w-4 h-4 flex-shrink-0" />
+          <span className="text-sm">File to File</span>
+        </button>
 
         {/* Separator */}
         <div className="border-t border-border my-2"></div>
@@ -146,8 +166,14 @@ export default function Sidebar() {
             >
               {tab.type === 'chat' ? (
                 <MessageSquare className="w-4 h-4 flex-shrink-0" />
-              ) : (
+              ) : tab.type === 'optimizer' ? (
                 <Sparkles className="w-4 h-4 flex-shrink-0" />
+              ) : tab.type === 'aipk' ? (
+                <AIPKIcon className="w-4 h-4 flex-shrink-0" />
+              ) : tab.type === 'file2file' ? (
+                <FileToFileIcon className="w-4 h-4 flex-shrink-0" />
+              ) : (
+                <MessageSquare className="w-4 h-4 flex-shrink-0" />
               )}
               <span className="flex-1 truncate text-sm">{tab.title}</span>
               <button

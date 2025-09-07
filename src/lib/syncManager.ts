@@ -53,17 +53,22 @@ export class SyncManager {
     try {
       const settingsStore = useSettingsStore.getState()
 
-      // 檢查本地是否有未同步的設定
+      // 總是先從服務器載入最新資料
+      await settingsStore.loadFromServer()
+
+      // 如果本地有未同步的資料，嘗試合併
       if (settingsStore.lastSyncAt) {
-        // 如果本地有資料，先嘗試同步到服務器
-        const syncResult = await settingsStore.syncToServer() as SyncResult
-        if (syncResult?.conflict) {
-          console.warn('Settings conflict detected, loading from server instead')
-          await settingsStore.loadFromServer()
+        try {
+          const syncResult = await settingsStore.syncToServer() as SyncResult
+          if (syncResult?.conflict) {
+            console.warn('Settings conflict detected after loading from server')
+            // 重新從服務器載入以解決衝突
+            await settingsStore.loadFromServer()
+          }
+        } catch (syncError) {
+          console.warn('Failed to sync local settings to server:', syncError)
+          // 同步失敗時保留服務器資料
         }
-      } else {
-        // 如果本地沒有資料，從服務器載入
-        await settingsStore.loadFromServer()
       }
     } catch (error) {
       console.warn('Failed to sync settings:', error)
@@ -76,17 +81,22 @@ export class SyncManager {
     try {
       const appStore = useAppStore.getState()
 
-      // 檢查本地是否有未同步的應用狀態
+      // 總是先從服務器載入最新資料
+      await appStore.loadFromServer()
+
+      // 如果本地有未同步的資料，嘗試合併
       if (appStore.lastSyncAt) {
-        // 如果本地有資料，先嘗試同步到服務器
-        const syncResult = await appStore.syncToServer() as SyncResult
-        if (syncResult?.conflict) {
-          console.warn('App state conflict detected, loading from server instead')
-          await appStore.loadFromServer()
+        try {
+          const syncResult = await appStore.syncToServer() as SyncResult
+          if (syncResult?.conflict) {
+            console.warn('App state conflict detected after loading from server')
+            // 重新從服務器載入以解決衝突
+            await appStore.loadFromServer()
+          }
+        } catch (syncError) {
+          console.warn('Failed to sync local app state to server:', syncError)
+          // 同步失敗時保留服務器資料
         }
-      } else {
-        // 如果本地沒有資料，從服務器載入
-        await appStore.loadFromServer()
       }
     } catch (error) {
       console.warn('Failed to sync app state:', error)
@@ -156,9 +166,23 @@ export class SyncManager {
   }
 
   // 重置同步狀態（用於登出）
-  reset(): void {
-    this.isInitialized = false
-    console.log('Sync manager reset')
+  async reset(): Promise<void> {
+    try {
+      console.log('Resetting sync and syncing data to server...')
+
+      // 在登出前，嘗試同步所有本地數據到服務器
+      await Promise.all([
+        useSettingsStore.getState().syncToServer(),
+        useAppStore.getState().syncToServer(),
+      ])
+
+      this.isInitialized = false
+      console.log('Sync manager reset and data synced to server')
+    } catch (error) {
+      console.warn('Failed to sync data before logout:', error)
+      // 即使同步失敗也要重置狀態
+      this.isInitialized = false
+    }
   }
 
   // 獲取同步狀態

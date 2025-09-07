@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
-import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight, X, Info } from 'lucide-react'
+import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight, X, Info, Cloud } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import { getModelOptions, refreshDynamicModels, type ProviderName } from '@/lib/providers'
+import { manualSync } from '@/lib/syncManager'
 
 interface SettingsModalProps {
   open: boolean
@@ -77,6 +78,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const [isTesting, setIsTesting] = useState(false)
   const [dynamicModels, setDynamicModels] = useState<Record<ProviderName, string[]>>(getModelOptions())
   const [isRefreshingModels, setIsRefreshingModels] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
 
   // Selector function to filter models based on user preferences
   const getFilteredModels = useCallback((provider: ProviderName, availableModels: string[]) => {
@@ -154,6 +156,23 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const handleSave = () => {
     // Settings are automatically saved to the store
     onOpenChange(false)
+  }
+
+  const handleManualSync = async () => {
+    setIsSyncing(true)
+    try {
+      const result = await manualSync()
+      if (result.settingsConflict || result.appStateConflict) {
+        alert('⚠️ 同步完成，但存在衝突。請檢查資料是否正確。')
+      } else {
+        alert('✅ 資料同步完成！')
+      }
+    } catch (error) {
+      console.error('Manual sync failed:', error)
+      alert('❌ 同步失敗，請檢查網路連線或重新登入。')
+    } finally {
+      setIsSyncing(false)
+    }
   }
 
   const handleTestConnection = async (provider: string) => {
@@ -655,21 +674,41 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             </div>
 
             {/* Footer Actions - Inside scrollable area */}
-            <div className="flex justify-end gap-3 pt-4 border-t border-border">
-            <button
-              onClick={() => onOpenChange(false)}
-              className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
-            >
-              Cancel
-            </button>
+            <div className="flex justify-between items-center pt-4 border-t border-border">
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 border border-border rounded-lg transition-colors',
+                  isSyncing
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:bg-accent'
+                )}
+                title="Sync data with server"
+              >
+                <Cloud className={cn(
+                  'w-4 h-4',
+                  isSyncing && 'animate-spin'
+                )} />
+                {isSyncing ? 'Syncing...' : 'Sync Data'}
+              </button>
 
-            <button
-              onClick={handleSave}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              Save Settings
-            </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onOpenChange(false)}
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleSave}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  Save Settings
+                </button>
+              </div>
             </div>
           </div>
         </div>
