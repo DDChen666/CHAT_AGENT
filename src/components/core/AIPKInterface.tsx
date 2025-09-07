@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, StopCircle, Plus, X, Settings } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useSettingsStore } from '@/store/settingsStore'
@@ -25,7 +25,7 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
     updateAIPKMessage,
     setAIPKChatLoading
   } = useAppStore()
-  const { features, modelSettings, apiKeys, connectionStatus, testConnections } = useSettingsStore()
+  const { features, modelSettings, apiKeys, connectionStatus, testConnections, userModelPreferences } = useSettingsStore()
 
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -38,8 +38,25 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
   const prompt = aipkState?.prompt || ''
   const chats = aipkState?.chats || []
 
-  // Get available models from providers config
-  const availableModels = getModelOptions()
+  // Selector function to filter models based on user preferences
+  const getFilteredModels = useCallback((provider: ProviderName, availableModels: string[]) => {
+    const preferredModels = userModelPreferences[provider] || []
+
+    // If no preferences set, return all available models
+    if (preferredModels.length === 0) {
+      return availableModels
+    }
+
+    // Return intersection of available models and user preferences
+    return availableModels.filter(model => preferredModels.includes(model))
+  }, [userModelPreferences])
+
+  // Get available models from providers config with user preferences
+  const allModels = getModelOptions()
+  const availableModels = {
+    gemini: getFilteredModels('gemini', allModels.gemini),
+    deepseek: getFilteredModels('deepseek', allModels.deepseek)
+  }
 
   // Update default chat if it's using wrong defaults
   useEffect(() => {
@@ -320,11 +337,16 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
                     const providerName = provider as ProviderName
                     const models = availableModels[providerName] || []
 
-                    return models.map(model => (
-                      <option key={`${provider}:${model}`} value={`${provider}:${model}`}>
-                        {provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} {model} ✅
-                      </option>
-                    ))
+                    return models.map(model => {
+                      // Truncate long model names for better display
+                      const displayModel = model.length > 15 ? `${model.substring(0, 12)}...` : model
+                      const providerShort = provider === 'deepseek' ? 'DS' : 'GM'
+                      return (
+                        <option key={`${provider}:${model}`} value={`${provider}:${model}`} title={`${provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} ${model}`}>
+                          {providerShort} {displayModel} ✅
+                        </option>
+                      )
+                    })
                   })}
                   {/* Show message if no providers are connected */}
                   {Object.entries(connectionStatus).filter(([key]) => key !== 'lastTested').every(([, connected]) => !connected) && (

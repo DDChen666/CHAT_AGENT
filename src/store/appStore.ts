@@ -2,6 +2,16 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { generateId } from '@/lib/utils'
 
+interface SyncResult {
+  conflict?: boolean
+  serverVersion?: number
+  clientVersion?: number
+  lastSyncAt?: string
+  success?: boolean
+  version?: number
+  conflictResolved?: boolean
+}
+
 export interface Tab {
   id: string
   type: 'chat' | 'optimizer' | 'aipk'
@@ -87,6 +97,13 @@ interface AppState {
   addAIPKMessage: (tabId: string, chatId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => string
   updateAIPKMessage: (tabId: string, chatId: string, messageId: string, content: string) => void
   setAIPKChatLoading: (tabId: string, chatId: string, isLoading: boolean) => void
+
+  // Sync functionality
+  syncToServer: (forceOverwrite?: boolean) => Promise<SyncResult | undefined>
+  loadFromServer: () => Promise<void>
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error'
+  lastSyncAt: number | null
+  setSyncStatus: (status: AppState['syncStatus']) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -97,6 +114,8 @@ export const useAppStore = create<AppState>()(
       chatStates: {},
       optimizerStates: {},
       aipkStates: {},
+      syncStatus: 'idle' as const,
+      lastSyncAt: null,
 
       setActiveTab: (tabId) => set({ activeTab: tabId }),
 
@@ -450,15 +469,104 @@ export const useAppStore = create<AppState>()(
           }
         })
       },
+
+      // Sync functionality
+      setSyncStatus: (syncStatus) => set({ syncStatus }),
+
+      syncToServer: async (forceOverwrite = false) => {
+        try {
+          set({ syncStatus: 'syncing' })
+
+          const currentState = get()
+          const appStateData = {
+            tabs: currentState.tabs,
+            activeTab: currentState.activeTab,
+            chatStates: currentState.chatStates,
+            optimizerStates: currentState.optimizerStates,
+            aipkStates: currentState.aipkStates,
+          }
+
+          const response = await fetch('/api/app-state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              state: appStateData,
+              clientVersion: currentState.lastSyncAt ? 1 : 0,
+              forceOverwrite,
+            }),
+          })
+
+          const result = await response.json()
+
+          if (!response.ok) {
+            // 處理衝突
+            if (response.status === 409 && result.conflict) {
+              return {
+                conflict: true,
+                serverVersion: result.serverVersion,
+                clientVersion: result.clientVersion,
+                lastSyncAt: result.lastSyncAt,
+              }
+            }
+            throw new Error(`App state sync failed: ${response.status} - ${result.message}`)
+          }
+
+          set({
+            syncStatus: 'success',
+            lastSyncAt: Date.now()
+          })
+
+          return result
+        } catch (error) {
+          console.error('App state sync error:', error)
+          set({ syncStatus: 'error' })
+          throw error
+        }
+      },
+
+      loadFromServer: async () => {
+        try {
+          set({ syncStatus: 'syncing' })
+
+          const response = await fetch('/api/app-state')
+          if (!response.ok) {
+            throw new Error(`Load app state failed: ${response.status}`)
+          }
+
+          const result = await response.json()
+
+          if (result.state) {
+            set({
+              ...result.state,
+              syncStatus: 'success',
+              lastSyncAt: result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now(),
+            })
+          } else {
+            set({
+              syncStatus: 'success',
+              lastSyncAt: Date.now()
+            })
+          }
+
+          return result
+        } catch (error) {
+          console.error('Load app state error:', error)
+          set({ syncStatus: 'error' })
+          throw error
+        }
+      },
+
     }),
     {
       name: 'synapse-storage',
+      // 排除同步狀態不持久化，只保留應用狀態
       partialize: (state) => ({
         tabs: state.tabs,
         activeTab: state.activeTab,
         chatStates: state.chatStates,
         optimizerStates: state.optimizerStates,
         aipkStates: state.aipkStates,
+        // 不持久化同步狀態
       }),
     }
   )

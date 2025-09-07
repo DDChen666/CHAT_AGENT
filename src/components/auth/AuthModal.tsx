@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
+import { initializeSync, resetSync } from '@/lib/syncManager'
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void }
 
@@ -40,6 +41,14 @@ export default function AuthModal({ open, onOpenChange }: Props) {
       const j = await res.json()
       if (!res.ok) throw new Error(j?.message || 'Login failed')
       setUser(j.user)
+
+      // 初始化跨裝置同步
+      try {
+        await initializeSync()
+      } catch (error) {
+        console.warn('Failed to initialize sync after login:', error)
+      }
+
       onOpenChange(false)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
@@ -57,6 +66,14 @@ export default function AuthModal({ open, onOpenChange }: Props) {
       const j = await res.json()
       if (!res.ok) throw new Error(j?.message || 'Register failed')
       setUser(j.user)
+
+      // 初始化跨裝置同步
+      try {
+        await initializeSync()
+      } catch (error) {
+        console.warn('Failed to initialize sync after register:', error)
+      }
+
       onOpenChange(false)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Register failed')
@@ -68,6 +85,9 @@ export default function AuthModal({ open, onOpenChange }: Props) {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
       setUser(null)
+
+      // 重置同步管理器
+      resetSync()
     } finally { setLoading(false) }
   }
 

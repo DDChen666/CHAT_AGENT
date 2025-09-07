@@ -24,6 +24,8 @@ model User {
 
   conversations Conversation[]
   apiKeys       ApiKey[]
+  settings      UserSettings?
+  appState      UserAppState?
 }
 
 model Conversation {
@@ -68,4 +70,32 @@ model ApiKey {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, provider])
+}
+
+model UserSettings {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  data        Json      // Encrypted settings data
+  version     Int       @default(1)
+  lastSyncAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSyncAt])
+}
+
+model UserAppState {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  data        Json      // Encrypted app state data
+  version     Int       @default(1)
+  lastSyncAt  DateTime  @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, lastSyncAt])
 }

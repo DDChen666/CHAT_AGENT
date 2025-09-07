@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight, X, Info } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
@@ -64,21 +64,52 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     systemPrompts,
     features,
     connectionStatus,
+    userModelPreferences,
     setApiKey,
     setModelSettings,
     setSystemPrompt,
     setFeature,
     testConnections,
+    addPreferredModel,
+    removePreferredModel,
   } = useSettingsStore()
 
   const [isTesting, setIsTesting] = useState(false)
   const [dynamicModels, setDynamicModels] = useState<Record<ProviderName, string[]>>(getModelOptions())
   const [isRefreshingModels, setIsRefreshingModels] = useState(false)
 
-  // Compute model list bound to provider
+  // Selector function to filter models based on user preferences
+  const getFilteredModels = useCallback((provider: ProviderName, availableModels: string[]) => {
+    const preferredModels = userModelPreferences[provider] || []
+
+    // If no preferences set, return all available models
+    if (preferredModels.length === 0) {
+      return availableModels
+    }
+
+    // Return intersection of available models and user preferences
+    return availableModels.filter(model => preferredModels.includes(model))
+  }, [userModelPreferences])
+
+  // Compute model list bound to provider with user preferences
   const availableModels = useMemo(() => {
-    return dynamicModels[modelSettings.defaultProvider] || []
-  }, [dynamicModels, modelSettings.defaultProvider])
+    const allModels = dynamicModels[modelSettings.defaultProvider] || []
+    return getFilteredModels(modelSettings.defaultProvider, allModels)
+  }, [dynamicModels, modelSettings.defaultProvider, getFilteredModels])
+
+  // Initialize user preferences with all available models if not set
+  useEffect(() => {
+    if (open && dynamicModels[modelSettings.defaultProvider]) {
+      const provider = modelSettings.defaultProvider
+      const allModels = dynamicModels[provider] || []
+      const currentPreferences = userModelPreferences[provider]
+
+      // If no preferences are set, initialize with all available models
+      if (currentPreferences.length === 0 && allModels.length > 0) {
+        allModels.forEach(model => addPreferredModel(provider, model))
+      }
+    }
+  }, [open, dynamicModels, modelSettings.defaultProvider, userModelPreferences, addPreferredModel])
 
   // Ensure defaultModel belongs to current provider
   useEffect(() => {
@@ -345,9 +376,14 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               {/* Default Model */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium">
-                    Default Model
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-sm font-medium">
+                      Default Model
+                    </label>
+                    <div title="Select your preferred models below. Removed models won't appear in dropdown menus.">
+                      <Info className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </div>
                   <button
                     onClick={async () => {
                       setIsRefreshingModels(true)
@@ -357,6 +393,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                           deepseek: apiKeys.deepseek,
                         })
                         setDynamicModels(updatedModels)
+                        // Re-initialize preferences with new models
+                        const provider = modelSettings.defaultProvider
+                        const allModels = updatedModels[provider] || []
+                        if (allModels.length > 0) {
+                          allModels.forEach(model => addPreferredModel(provider, model))
+                        }
                       } catch (error) {
                         console.warn('Failed to refresh models:', error)
                       } finally {
@@ -378,15 +420,65 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                     )} />
                   </button>
                 </div>
-                <select
-                  value={modelSettings.defaultModel}
-                  onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+
+                {/* Current Default Model Selector */}
+                <div className="mb-3">
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    Current Default Model
+                  </label>
+                  <select
+                    value={modelSettings.defaultModel}
+                    onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  >
+                    {availableModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Model Preferences */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-2">
+                    Manage Available Models (click × to remove)
+                  </label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded-lg p-2 space-y-1">
+                    {dynamicModels[modelSettings.defaultProvider]?.map((model) => {
+                      const isPreferred = userModelPreferences[modelSettings.defaultProvider]?.includes(model)
+                      return (
+                        <div key={model} className="flex items-center justify-between py-1 px-2 rounded text-sm hover:bg-accent/50">
+                          <span className={cn(
+                            'flex-1 truncate',
+                            isPreferred ? 'text-foreground' : 'text-muted-foreground'
+                          )}>
+                            {model}
+                          </span>
+                          <button
+                            onClick={() => {
+                              if (isPreferred) {
+                                removePreferredModel(modelSettings.defaultProvider, model)
+                              } else {
+                                addPreferredModel(modelSettings.defaultProvider, model)
+                              }
+                            }}
+                            className={cn(
+                              'ml-2 p-1 rounded transition-colors',
+                              isPreferred
+                                ? 'hover:bg-destructive hover:text-destructive-foreground text-muted-foreground'
+                                : 'hover:bg-primary hover:text-primary-foreground text-muted-foreground'
+                            )}
+                            title={isPreferred ? 'Remove from available models' : 'Add to available models'}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only preferred models will appear in dropdown menus throughout the app.
+                  </p>
+                </div>
               </div>
 
               {/* Temperature */}
