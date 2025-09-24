@@ -25,21 +25,15 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
   const handleStartOptimization = async () => {
     if (!input.trim() || isOptimizing) return
 
-    // 檢查是否有有效的 API key
-    const provider = modelSettings.defaultProvider
-    const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
-
-    if (!selectedKey) {
-      toast.error(`請先在設定中配置 ${provider === 'gemini' ? 'Gemini' : 'DeepSeek'} API Key`)
-      return
-    }
-
     setOptimizerInitialPrompt(tabId, input.trim())
     setIsOptimizing(true)
     setCurrentRound(0)
 
     try {
       // Call the actual optimization API
+      const provider = modelSettings.defaultProvider
+      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
       const response = await fetch('/api/optimize', {
         method: 'POST',
         headers: {
@@ -50,7 +44,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           iterations: 8,
           threshold: 90,
           provider,
-          apiKey: selectedKey,
+          apiKey: selectedKey || undefined,
         }),
       })
 

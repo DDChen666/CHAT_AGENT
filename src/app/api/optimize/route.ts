@@ -69,51 +69,26 @@ ${initialPrompt}
     } catch (error) {
       console.error('Optimization API error:', error)
       // 失敗時返回模擬優化
-      return this.simulateOptimization(initialPrompt)
+      return this.simulateOptimization(initialPrompt, provider)
     }
   }
 
-  private simulateOptimization(initialPrompt: string) {
-    // 提供真正的優化示例而不是標籤
-    const optimizationExamples: Record<string, string> = {
-      '怎麼自己做漢堡排': `# 漢堡排製作專家
-
-## 角色
-你是專業的漢堡排製作專家，擅長指導初學者製作美味多汁的漢堡排。
-
-## 任務
-請詳細指導用戶如何從零開始製作漢堡排。
-
-## 步驟要求
-1. **材料準備**：列出所需的所有食材和工具
-2. **製作過程**：分步驟詳細說明製作方法
-3. **烹飪技巧**：提供保持肉質多汁的關鍵技巧
-4. **調味建議**：推薦適合的調味料和比例
-5. **常見問題**：解答初學者可能遇到的問題
-
-## 輸出格式
-請使用清晰的編號步驟和詳細說明，確保初學者能夠輕鬆跟隨。`,
-      'default': `# 專業提示詞優化
-
-## 角色
-你是專業的提示詞優化專家。
-
-## 任務
-請根據用戶的原始需求，提供結構化、詳細的指導。
-
-## 要求
-- 使用清晰的標題和結構
-- 包含具體的步驟和示例
-- 提供實用的技巧和建議
-- 確保內容完整且易於理解
-
-## 輸出格式
-請使用Markdown格式，確保結構清晰、內容豐富。`
-    }
-
-    // 根據常見問題提供針對性優化
-    const optimizedPrompt = optimizationExamples[initialPrompt] || optimizationExamples['default']
-
+  private simulateOptimization(initialPrompt: string, provider: string) {
+    // 模擬優化過程（備用）
+    const improvements = [
+      '添加了更明確的指令',
+      '改進了結構和格式',
+      '增強了具體性和細節',
+      '優化了約束條件',
+      '提高了清晰度和可執行性'
+    ]
+    
+    let optimizedPrompt = initialPrompt
+    
+    improvements.forEach((improvement, index) => {
+      optimizedPrompt += `\n\n[${provider} 優化 ${index + 1}: ${improvement}]`
+    })
+    
     return optimizedPrompt
   }
   
@@ -190,17 +165,6 @@ export async function POST(request: NextRequest) {
     if (!effectiveKey) {
       if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
       if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
-    }
-
-    // 如果仍然沒有有效的 API key，返回錯誤
-    if (!effectiveKey) {
-      return Response.json(
-        {
-          message: 'API key is required',
-          code: 'API_KEY_REQUIRED'
-        },
-        { status: 400 }
-      )
     }
 
     const encoder = new TextEncoder()

@@ -115,18 +115,6 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
     e.preventDefault()
     if (!input.trim() || isStreaming) return
 
-    // 檢查是否有至少一個有效的 API key 和連接狀態
-    const hasValidConnection = chats.some(chat => {
-      const provider = chat.provider as ProviderName
-      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
-      return selectedKey && connectionStatus[provider as keyof typeof connectionStatus]
-    })
-
-    if (!hasValidConnection) {
-      toast.error('請先在設定中配置有效的 API Key 並確保連接狀態正常')
-      return
-    }
-
     const userMessage = input.trim()
     setInput('')
 
@@ -168,8 +156,6 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
             // Only proceed if we have a valid provider and API key
             if (!selectedKey || !connectionStatus[provider as keyof typeof connectionStatus]) {
               console.warn(`Skipping chat for ${provider} - no valid API key or not connected`)
-              // 更新消息顯示錯誤
-              updateAIPKMessage(tabId, chat.id, assistantMessageIds[index], `❌ ${provider === 'gemini' ? 'Gemini' : 'DeepSeek'} API Key 未配置或連接失敗`)
               resolve()
               return
             }
