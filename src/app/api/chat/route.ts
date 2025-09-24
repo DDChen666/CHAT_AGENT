@@ -44,11 +44,7 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!effectiveKey) {
-      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
-      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
-    }
-    if (!effectiveKey) {
-      return Response.json({ message: `No API key for ${provider}` }, { status: 400 })
+      return Response.json({ message: `No API key configured for ${provider}. Please add your key in settings.`, code: 'MISSING_API_KEY' }, { status: 400 })
     }
     // Optional persistence to DB if conversationId is provided and valid
     let validatedConversationId: string | null = null

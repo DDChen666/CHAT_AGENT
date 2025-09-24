@@ -6,6 +6,12 @@ import { getTokenPayloadFromCookies } from '@/lib/auth'
 import { callProvider, type ProviderName } from '@/lib/providers'
 import { Provider as DbProvider } from '@prisma/client'
 
+type ReviewAnalysis = {
+  scores: Record<string, number>
+  total: number
+  feedback: string[]
+}
+
 // 優化器邏輯
 class OptimizerClient {
   private improverPrompt: string
@@ -53,50 +59,82 @@ class OptimizerClient {
 不要輸出任何 JSON 以外的內容。`
   }
 
-  async optimizePrompt(initialPrompt: string, provider: string, apiKey?: string) {
+  async optimizePrompt(
+    initialPrompt: string,
+    currentPrompt: string,
+    previousFeedback: string[],
+    provider: string,
+    apiKey?: string
+  ) {
     try {
+      const sanitizedInitial = initialPrompt.trim()
+      const sanitizedCurrent = currentPrompt.trim() || sanitizedInitial
+      const feedbackSection = previousFeedback.length
+        ? previousFeedback.map((item, index) => `${index + 1}. ${item}`).join('\n')
+        : '目前尚未收到審核回饋，請根據初始需求自行優化。'
+
       const optimizationPrompt = `${this.improverPrompt}
 
-請根據以上指導原則優化以下提示詞：
+初始使用者需求：
 """
-${initialPrompt}
+${sanitizedInitial}
 """
 
-請提供優化後的版本，直接輸出優化後的提示詞內容，不要包含任何額外的解釋或評論。`
+當前提示詞版本：
+"""
+${sanitizedCurrent}
+"""
+
+上一輪審核者回饋（若有）：
+${feedbackSection}
+
+請依據上述資訊，輸出一份完全優化後且可直接使用的提示詞內容。輸出時請不要包含任何額外說明，只需提供最終提示詞。`
       const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
       const text = await callProvider(provider as ProviderName, model, [{ role: 'user', content: optimizationPrompt }], apiKey || '', { temperature: 0.3, maxTokens: 1024 })
       return text
     } catch (error) {
       console.error('Optimization API error:', error)
       // 失敗時返回模擬優化
-      return this.simulateOptimization(initialPrompt, provider)
+      return this.simulateOptimization(initialPrompt, currentPrompt, previousFeedback)
     }
   }
 
-  private simulateOptimization(initialPrompt: string, provider: string) {
-    // 模擬優化過程（備用）
-    const improvements = [
-      '添加了更明確的指令',
-      '改進了結構和格式',
-      '增強了具體性和細節',
-      '優化了約束條件',
-      '提高了清晰度和可執行性'
-    ]
-    
-    let optimizedPrompt = initialPrompt
-    
-    improvements.forEach((improvement, index) => {
-      optimizedPrompt += `\n\n[${provider} 優化 ${index + 1}: ${improvement}]`
-    })
-    
-    return optimizedPrompt
+  private simulateOptimization(initialPrompt: string, currentPrompt: string, previousFeedback: string[]) {
+    const base = (currentPrompt || initialPrompt).trim()
+    const feedbackNotes = previousFeedback.length
+      ? previousFeedback.map((item) => `- ${item}`).join('\n')
+      : '- 補充明確的角色設定\n- 加入具體步驟與條件\n- 說明需要的輸出格式'
+
+    return `# 角色
+你是一位專業助理，擅長將需求拆解為可執行的步驟並提供精準回覆。
+
+# 任務目標
+${base || '請根據使用者需求提供最佳解決方案'}
+
+# 執行流程
+1. 先確認使用者的核心需求與限制條件。
+2. 根據需求拆解出具體的步驟或章節，並補充必要的背景資訊。
+3. 主動提供安全與注意事項，如有需要可附上範例。
+
+# 審核回饋整合
+${feedbackNotes}
+
+# 輸出格式
+- 使用條列方式清楚呈現重點。
+- 若涉及步驟，請依序標號並提供細節。
+- 全程使用繁體中文回覆。`
   }
-  
-  async generateReviewScores(prompt: string, provider: string, apiKey?: string) {
+
+  async generateReviewScores(initialPrompt: string, prompt: string, provider: string, apiKey?: string): Promise<ReviewAnalysis> {
     try {
       const reviewPrompt = `${this.criticPrompt}
 
-請評估以下提示詞：
+使用者初始需求：
+"""
+${initialPrompt}
+"""
+
+待審核的提示詞：
 """
 ${prompt}
 """
@@ -105,10 +143,37 @@ ${prompt}
       const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
       const jsonResponse = await callProvider(provider as ProviderName, model, [{ role: 'user', content: reviewPrompt }], apiKey || '', { temperature: 0 })
       const text = (jsonResponse || '').trim()
-      
+
       // 嘗試解析JSON回應
       try {
-        return JSON.parse(text)
+        const parsed = JSON.parse(text) as {
+          scores?: Record<string, number>
+          overall_score?: number
+          actionable_suggestions?: unknown
+        }
+
+        const normalizedScores = Object.entries(parsed.scores || {}).reduce<Record<string, number>>((acc, [key, value]) => {
+          if (typeof value === 'number' && !Number.isNaN(value)) {
+            acc[key] = value
+          }
+          return acc
+        }, {})
+
+        const feedback = Array.isArray(parsed.actionable_suggestions)
+          ? parsed.actionable_suggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          : []
+
+        const totalFromResponse = typeof parsed.overall_score === 'number' && !Number.isNaN(parsed.overall_score)
+          ? parsed.overall_score
+          : Object.values(normalizedScores).length
+            ? Object.values(normalizedScores).reduce((sum, num) => sum + num, 0) / Object.values(normalizedScores).length
+            : 0
+
+        return {
+          scores: normalizedScores,
+          total: Math.round(totalFromResponse),
+          feedback: feedback.length ? feedback : ['加強角色與目標設定', '補充具體步驟與範例', '清楚定義輸出格式與限制'],
+        }
       } catch {
         // 如果解析失敗，返回模擬評分
         return this.generateSimulatedScores()
@@ -119,13 +184,21 @@ ${prompt}
     }
   }
 
-  private generateSimulatedScores() {
-    return {
+  private generateSimulatedScores(): ReviewAnalysis {
+    const scores = {
       clarity: Math.floor(Math.random() * 15) + 85,
-      constraints: Math.floor(Math.random() * 15) + 85,
-      toolUse: Math.floor(Math.random() * 15) + 85,
-      safety: Math.floor(Math.random() * 15) + 85,
-      structure: Math.floor(Math.random() * 15) + 85,
+      specificity: Math.floor(Math.random() * 15) + 85,
+      completeness: Math.floor(Math.random() * 15) + 85,
+      robustness: Math.floor(Math.random() * 15) + 85,
+      intent_adherence: Math.floor(Math.random() * 15) + 85,
+    }
+
+    const total = Math.round(Object.values(scores).reduce((sum, score) => sum + score, 0) / Object.values(scores).length)
+
+    return {
+      scores,
+      total,
+      feedback: ['明確定義角色職責', '加入具體步驟與情境資訊', '說明輸出格式與品質標準'],
     }
   }
 }
@@ -147,7 +220,7 @@ export async function POST(request: NextRequest) {
       systemPrompts?.critic
     )
     
-    // Resolve API key (body > saved per-user > env)
+    // Resolve API key (body > saved per-user)
     let effectiveKey = (apiKey || '').trim()
     if (!effectiveKey) {
       const session = await getTokenPayloadFromCookies()
@@ -163,8 +236,13 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!effectiveKey) {
-      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
-      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
+      return Response.json(
+        {
+          message: `No API key configured for ${provider}. Please add your key in settings before using the optimizer.`,
+          code: 'MISSING_API_KEY'
+        },
+        { status: 400 }
+      )
     }
 
     const encoder = new TextEncoder()
@@ -172,24 +250,21 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         let bestScore = 0
         let bestPrompt = ''
+        let currentPrompt = initialPrompt
+        let previousFeedback: string[] = []
 
         for (let round = 1; round <= iterations; round++) {
           // Use the optimizer to improve the prompt
-          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, provider, effectiveKey)
-          
+          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, currentPrompt, previousFeedback, provider, effectiveKey)
+
           // Generate review scores
-          const scores = await optimizer.generateReviewScores(improvedPrompt, provider, effectiveKey) as Record<string, number>
-          
-          const totalScore = Math.round(
-            Object.values(scores).reduce((sum: number, score: number) => sum + score, 0) / Object.values(scores).length
-          )
-          
-          const feedback = [
-            'Enhanced clarity and specificity',
-            'Added concrete constraints and examples',
-            'Improved tool usage instructions',
-            'Strengthened safety guidelines',
-          ]
+          const review = await optimizer.generateReviewScores(initialPrompt, improvedPrompt, provider, effectiveKey)
+
+          const totalScore = review.total
+
+          const feedback = review.feedback.length
+            ? review.feedback
+            : ['強化提示詞的清晰度', '補充必要的限制條件', '提供具體輸出格式建議']
 
           // Update best result
           if (totalScore > bestScore) {
@@ -197,12 +272,15 @@ export async function POST(request: NextRequest) {
             bestPrompt = improvedPrompt
           }
 
+          previousFeedback = feedback
+          currentPrompt = improvedPrompt
+
           // Send round data
           const roundData = {
             round,
             improved: improvedPrompt,
             review: {
-              scores,
+              scores: review.scores,
               total: totalScore,
               feedback,
             },
