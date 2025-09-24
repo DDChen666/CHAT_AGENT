@@ -1,0 +1,103 @@
+// Synapse UI Database Schema
+// 轻量级SQLite数据库，用于存储用户对话和优化数据
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  username  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联数据
+  conversations Conversation[]
+  sessions      UserSession[]
+
+  // 用户偏好设置（JSON格式存储）
+  settings String @default("{}")
+
+  // 统计信息
+  stats String @default("{}")
+
+  @@map("users")
+}
+
+// 会话表（可选，用于无密码登录）
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // 关联用户
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+// 对话表（标签页）
+model Conversation {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  type      String // "chat" | "optimizer"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关联数据
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  optimizations Optimization[]
+
+  // 对话状态（JSON格式存储）
+  status String @default("{}")
+
+  @@index([userId, updatedAt])
+  @@map("conversations")
+}
+
+// 消息表
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  role           String // "user" | "assistant" | "system"
+  content        String
+  timestamp      DateTime @default(now())
+
+  // 关联对话
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  // 消息元数据（JSON格式存储）
+  metadata String @default("{}")
+
+  @@index([conversationId, timestamp])
+  @@map("messages")
+}
+
+// 优化器表（专门存储优化过程数据）
+model Optimization {
+  id             String   @id @default(cuid())
+  conversationId String
+  round          Int
+  prompt         String
+  scores         String // 评分数据
+  feedback       String // 反馈信息
+  createdAt      DateTime @default(now())
+
+  // 关联对话
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, round])
+  @@map("optimizations")
+}

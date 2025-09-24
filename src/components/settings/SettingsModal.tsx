@@ -209,9 +209,15 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       } else {
         alert(`❌ ${provider.toUpperCase()} API connection failed:\n${result.message}`)
       }
+
+      // 無論測試成功或失敗，都強制更新連接狀態
+      await testConnections()
     } catch (error) {
       console.error('Connection test failed:', error)
       alert(`❌ ${provider.toUpperCase()} API connection test failed: Network error`)
+
+      // 即使測試失敗也要更新狀態
+      await testConnections()
     } finally {
       setIsTesting(false)
     }
