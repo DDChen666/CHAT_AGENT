@@ -73,6 +73,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     testConnections,
     addPreferredModel,
     removePreferredModel,
+    setConnectionStatus,
   } = useSettingsStore()
 
   const [isTesting, setIsTesting] = useState(false)
@@ -178,9 +179,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
   const handleTestConnection = async (provider: string) => {
     console.log(`Testing connection for ${provider}...`)
     setIsTesting(true)
+    const providerKey = provider as 'gemini' | 'deepseek'
     try {
       const apiKey = apiKeys[provider as keyof typeof apiKeys]
-      
+
       const response = await fetch('/api/test', {
         method: 'POST',
         headers: {
@@ -190,9 +192,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       })
       
       const result = await response.json()
-      
+
       if (result.success) {
         alert(`✅ ${provider.toUpperCase()} API connection successful!\n${result.message}`)
+        setConnectionStatus(providerKey, true)
         // Save to server after success
         const saveRes = await fetch('/api/keys', {
           method: 'POST',
@@ -208,10 +211,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         }
       } else {
         alert(`❌ ${provider.toUpperCase()} API connection failed:\n${result.message}`)
+        setConnectionStatus(providerKey, false)
       }
     } catch (error) {
       console.error('Connection test failed:', error)
       alert(`❌ ${provider.toUpperCase()} API connection test failed: Network error`)
+      setConnectionStatus(providerKey, false)
     } finally {
       setIsTesting(false)
     }

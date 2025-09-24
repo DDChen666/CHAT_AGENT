@@ -57,6 +57,14 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
     if (!input.trim() || isStreaming) return
 
     const userMessage = input.trim()
+    const provider = modelSettings.defaultProvider
+    const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
+    if (!selectedKey) {
+      toast.error(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'DeepSeek'} API key in Settings before chatting.`)
+      return
+    }
+
     setInput('')
     addChatMessage(tabId, { role: 'user', content: userMessage })
 
@@ -67,8 +75,6 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
     try {
       // Call the actual API
-      const provider = modelSettings.defaultProvider
-      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -86,13 +92,29 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
           temperature: modelSettings.temperature,
           stream: true,
           enableCache: features.enableGeminiCache,
-          apiKey: selectedKey || undefined,
+          apiKey: selectedKey,
         }),
         signal: controller.signal,
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        let errorMessage = `HTTP error! status: ${response.status}`
+        try {
+          const data = await response.json()
+          if (data?.message) {
+            errorMessage = data.message
+          }
+        } catch {
+          try {
+            const text = await response.text()
+            if (text) {
+              errorMessage = text
+            }
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const reader = response.body?.getReader()
@@ -153,7 +175,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
         console.log('Request aborted')
       } else {
         console.error('Streaming error:', error)
-        toast.error('Failed to send message. Please try again.')
+        toast.error(error instanceof Error ? error.message : 'Failed to send message. Please try again.')
         addChatMessage(tabId, {
           role: 'assistant',
           content: 'Sorry, I encountered an error. Please try again.',

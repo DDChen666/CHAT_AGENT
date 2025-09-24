@@ -97,6 +97,7 @@ interface AppState {
   setOptimizerInitialPrompt: (tabId: string, prompt: string) => void
   addOptimizerRound: (tabId: string, round: OptimizerState['rounds'][0]) => void
   setOptimizerBestResult: (tabId: string, result: OptimizerState['bestResult']) => void
+  resetOptimizerProgress: (tabId: string) => void
 
   // AIPK states
   aipkStates: Record<string, AIPKState>
@@ -367,6 +368,22 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+      },
+
+      resetOptimizerProgress: (tabId) => {
+        set((state) => {
+          const current = state.optimizerStates[tabId] || { tabId, initialPrompt: '', rounds: [] as OptimizerState['rounds'] }
+          return {
+            optimizerStates: {
+              ...state.optimizerStates,
+              [tabId]: {
+                ...current,
+                rounds: [],
+                bestResult: undefined,
+              },
+            },
+          }
+        })
       },
 
       setAIPKPrompt: (tabId, prompt) => {

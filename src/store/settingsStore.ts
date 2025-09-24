@@ -48,6 +48,7 @@ interface SettingsState extends Settings {
   setSystemPrompt: (type: keyof Settings['systemPrompts'], prompt: string) => void
   setFeature: (feature: keyof Settings['features'], enabled: boolean) => void
   testConnections: () => Promise<void>
+  setConnectionStatus: (provider: 'gemini' | 'deepseek', status: boolean) => void
   resetToDefaults: () => void
   // User model preferences
   addPreferredModel: (provider: 'gemini' | 'deepseek', model: string) => void
@@ -183,6 +184,16 @@ export const useSettingsStore = create<SettingsState>()(
         set(() => ({
           connectionStatus: {
             ...results,
+            lastTested: Date.now(),
+          },
+        }))
+      },
+
+      setConnectionStatus: (provider, status) => {
+        set((state) => ({
+          connectionStatus: {
+            ...state.connectionStatus,
+            [provider]: status,
             lastTested: Date.now(),
           },
         }))
