@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, StopCircle, Plus, X, Settings } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { Send, StopCircle, Plus, X } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,8 @@ import MessageBubble from './MessageBubble'
 import ThinkingAnimation from './ThinkingAnimation'
 import { toast } from 'sonner'
 import { getModelOptions, type ProviderName } from '@/lib/providers'
+
+const PROVIDER_ORDER: ProviderName[] = ['deepseek', 'gemini']
 
 interface AIPKInterfaceProps {
   tabId: string
@@ -29,14 +31,13 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
 
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
-  const [isThinking, setIsThinking] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const aipkState = aipkStates[tabId]
   const prompt = aipkState?.prompt || ''
-  const chats = aipkState?.chats || []
+  const chats = useMemo(() => aipkState?.chats ?? [], [aipkState?.chats])
 
   // Selector function to filter models based on user preferences
   const getFilteredModels = useCallback((provider: ProviderName, availableModels: string[]) => {
@@ -52,19 +53,68 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
   }, [userModelPreferences])
 
   // Get available models from providers config with user preferences
-  const allModels = getModelOptions()
-  const availableModels = {
-    gemini: getFilteredModels('gemini', allModels.gemini),
-    deepseek: getFilteredModels('deepseek', allModels.deepseek)
-  }
+  const allModels = useMemo(() => getModelOptions(), [])
+  const availableModels = useMemo(
+    () => ({
+      gemini: getFilteredModels('gemini', allModels.gemini),
+      deepseek: getFilteredModels('deepseek', allModels.deepseek),
+    }),
+    [allModels, getFilteredModels]
+  )
 
   // Update default chat if it's using wrong defaults
   useEffect(() => {
-    if (chats.length === 1 && chats[0].provider === 'openai') {
-      // Update to use settings default
-      updateAIPKChatModel(tabId, chats[0].id, modelSettings.defaultModel, modelSettings.defaultProvider)
-    }
-  }, [chats, modelSettings])
+    if (!chats.length) return
+
+    chats.forEach((chat) => {
+      const provider = chat.provider as ProviderName
+      const isKnownProvider = PROVIDER_ORDER.includes(provider)
+      const isConnected = isKnownProvider ? connectionStatus[provider] : false
+      const models = isKnownProvider ? availableModels[provider] || [] : []
+
+      const resolveFallback = () => {
+        const preferred = modelSettings.defaultProvider
+        const preferredAvailable =
+          connectionStatus[preferred] && (availableModels[preferred]?.length ?? 0) > 0
+
+        const fallbackProvider = preferredAvailable
+          ? preferred
+          : PROVIDER_ORDER.find(
+              (candidate) => connectionStatus[candidate] && (availableModels[candidate]?.length ?? 0) > 0
+            )
+
+        if (!fallbackProvider) return
+
+        const fallbackModels = availableModels[fallbackProvider] || []
+        if (!fallbackModels.length) return
+
+        const fallbackModel =
+          fallbackProvider === preferred && fallbackModels.includes(modelSettings.defaultModel)
+            ? modelSettings.defaultModel
+            : fallbackModels[0]
+
+        updateAIPKChatModel(tabId, chat.id, fallbackModel, fallbackProvider)
+      }
+
+      if (!isKnownProvider || !isConnected) {
+        resolveFallback()
+        return
+      }
+
+      if (models.length > 0 && !models.includes(chat.model)) {
+        const replacement = models.includes(modelSettings.defaultModel) ? modelSettings.defaultModel : models[0]
+        updateAIPKChatModel(tabId, chat.id, replacement, provider)
+      }
+    })
+  }, [
+    chats,
+    availableModels,
+    connectionStatus,
+    modelSettings.defaultModel,
+    modelSettings.defaultProvider,
+    tabId,
+    updateAIPKChatModel,
+  ])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -78,17 +128,39 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
   useEffect(() => {
     // Test connections on component mount
     testConnections()
-  }, []) // Only run once on mount
+  }, [testConnections]) // Only run once on mount
 
   useEffect(() => {
     // Re-test connections when API keys change
     if (apiKeys.deepseek || apiKeys.gemini) {
       testConnections()
     }
-  }, [apiKeys.deepseek, apiKeys.gemini])
+  }, [apiKeys.deepseek, apiKeys.gemini, testConnections])
 
   const handlePromptChange = (value: string) => {
     setAIPKPrompt(tabId, value)
+  }
+
+  const getInitialChatConfig = (): { provider: ProviderName; model: string } | null => {
+    const preferredProvider = modelSettings.defaultProvider
+    const isPreferredAvailable =
+      connectionStatus[preferredProvider] && (availableModels[preferredProvider]?.length ?? 0) > 0
+
+    const providerToUse = isPreferredAvailable
+      ? preferredProvider
+      : PROVIDER_ORDER.find((provider) => connectionStatus[provider] && (availableModels[provider]?.length ?? 0) > 0) ?? null
+
+    if (!providerToUse) return null
+
+    const models = availableModels[providerToUse] || []
+    if (models.length === 0) return null
+
+    const preferredModel =
+      providerToUse === preferredProvider && models.includes(modelSettings.defaultModel)
+        ? modelSettings.defaultModel
+        : models[0]
+
+    return { provider: providerToUse, model: preferredModel }
   }
 
   const handleAddChat = () => {
@@ -96,7 +168,14 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
       toast.error('最多只能同時開啟5個聊天視窗')
       return
     }
-    addAIPKChat(tabId, 'gpt-3.5-turbo', 'openai')
+
+    const config = getInitialChatConfig()
+    if (!config) {
+      toast.error('目前沒有可用的模型，請先測試 API 連線')
+      return
+    }
+
+    addAIPKChat(tabId, config.model, config.provider)
   }
 
   const handleRemoveChat = (chatId: string) => {
@@ -107,8 +186,23 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
     removeAIPKChat(tabId, chatId)
   }
 
-  const handleModelChange = (chatId: string, model: string, provider: string) => {
+  const handleModelChange = (chatId: string, model: string, provider: ProviderName) => {
     updateAIPKChatModel(tabId, chatId, model, provider)
+  }
+
+  const handleProviderChange = (chatId: string, provider: ProviderName) => {
+    const isConnected = connectionStatus[provider]
+    const models = availableModels[provider] || []
+
+    if (!isConnected || models.length === 0) {
+      toast.error('此模型提供商尚未通過連線測試，請先確認 API 設定')
+      return
+    }
+
+    const currentChat = chats.find((chat) => chat.id === chatId)
+    const nextModel = currentChat && models.includes(currentChat.model) ? currentChat.model : models[0]
+
+    handleModelChange(chatId, nextModel, provider)
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -137,7 +231,6 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
     })
 
     setIsStreaming(true)
-    setIsThinking(true)
 
     // 为每个聊天窗口发送请求，带时间差
     const delay = 1000 // 1秒延迟
@@ -244,13 +337,11 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
     await Promise.all(requests)
 
     setIsStreaming(false)
-    setIsThinking(false)
   }
 
   const stopStreaming = () => {
     abortController?.abort()
     setIsStreaming(false)
-    setIsThinking(false)
     chats.forEach(chat => {
       setAIPKChatLoading(tabId, chat.id, false)
     })
@@ -315,55 +406,81 @@ export default function AIPKInterface({ tabId }: AIPKInterfaceProps) {
             </div>
           </div>
 
-          <div className="space-y-2">
-            {chats.map((chat, index) => (
-              <div key={chat.id} className="flex items-center gap-2">
-                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                  AI {index + 1}
-                </span>
-                <select
-                  value={`${chat.provider}:${chat.model}`}
-                  onChange={(e) => {
-                    const [provider, model] = e.target.value.split(':')
-                    handleModelChange(chat.id, model, provider)
-                  }}
-                  className="flex-1 text-xs rounded border border-border p-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                  disabled={false}
-                >
-                  {/* Only show connected providers with their available models */}
-                  {Object.entries(connectionStatus).filter(([key]) => key !== 'lastTested').map(([provider, isConnected]) => {
-                    if (!isConnected) return null
+          <div className="space-y-3">
+            {chats.map((chat, index) => {
+              const provider = PROVIDER_ORDER.includes(chat.provider as ProviderName)
+                ? (chat.provider as ProviderName)
+                : modelSettings.defaultProvider
+              const models = availableModels[provider] || []
+              const isProviderConnected = connectionStatus[provider]
 
-                    const providerName = provider as ProviderName
-                    const models = availableModels[providerName] || []
+              return (
+                <div key={chat.id} className="flex flex-col gap-2 rounded border border-border p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                      AI {index + 1}
+                    </span>
+                    {chats.length > 1 && (
+                      <button
+                        onClick={() => handleRemoveChat(chat.id)}
+                        className="p-1 hover:bg-destructive hover:text-destructive-foreground rounded transition-colors"
+                        title="Remove Chat"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
 
-                    return models.map(model => {
-                      // Truncate long model names for better display
-                      const displayModel = model.length > 15 ? `${model.substring(0, 12)}...` : model
-                      const providerShort = provider === 'deepseek' ? 'DS' : 'GM'
-                      return (
-                        <option key={`${provider}:${model}`} value={`${provider}:${model}`} title={`${provider === 'deepseek' ? 'DeepSeek' : 'Gemini'} ${model}`}>
-                          {providerShort} {displayModel} ✅
-                        </option>
-                      )
-                    })
-                  })}
-                  {/* Show message if no providers are connected */}
-                  {Object.entries(connectionStatus).filter(([key]) => key !== 'lastTested').every(([, connected]) => !connected) && (
-                    <option disabled>請先在設定中配置API Key</option>
-                  )}
-                </select>
-                {chats.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveChat(chat.id)}
-                    className="p-1 hover:bg-destructive hover:text-destructive-foreground rounded transition-colors"
-                    title="Remove Chat"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] text-muted-foreground">模型提供商</label>
+                      <select
+                        value={provider}
+                        onChange={(e) => handleProviderChange(chat.id, e.target.value as ProviderName)}
+                        className="text-xs rounded border border-border p-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        {PROVIDER_ORDER.map((providerOption) => {
+                          const connected = connectionStatus[providerOption]
+                          const hasModels = (availableModels[providerOption]?.length ?? 0) > 0
+                          const label = providerOption === 'deepseek' ? 'DeepSeek' : 'Gemini'
+                          return (
+                            <option
+                              key={providerOption}
+                              value={providerOption}
+                              disabled={!connected || !hasModels}
+                            >
+                              {label} {connected && hasModels ? '✅' : '❌'}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] text-muted-foreground">模型名稱</label>
+                      <select
+                        value={models.includes(chat.model) ? chat.model : models[0] ?? ''}
+                        onChange={(e) => handleModelChange(chat.id, e.target.value, provider)}
+                        className="text-xs rounded border border-border p-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                        disabled={!isProviderConnected || models.length === 0}
+                      >
+                        {models.length > 0 ? (
+                          models.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>
+                            請先啟用此提供商
+                          </option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 

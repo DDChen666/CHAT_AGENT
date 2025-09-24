@@ -151,7 +151,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
         console.error('Connection test failed:', error)
       })
     }
-  }, [open, apiKeys.gemini, apiKeys.deepseek])
+  }, [open, apiKeys.gemini, apiKeys.deepseek, testConnections])
 
 
   const handleSave = () => {

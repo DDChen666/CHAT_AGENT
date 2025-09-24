@@ -6,6 +6,7 @@ import { useAppStore } from '@/store/appStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import ThinkingAnimation from './ThinkingAnimation'
 
 interface OptimizerInterfaceProps {
   tabId: string
@@ -237,9 +238,23 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
 
         {/* Middle Column - Improver Results */}
         <div className="flex-1 border-r border-border overflow-y-auto">
-          <div className="p-4">
+          <div className="p-4 space-y-4">
             <h3 className="text-lg font-semibold mb-4">Improved Prompts</h3>
-            
+
+            {isOptimizing && (
+              <div className="flex items-start space-x-3 p-4 border border-dashed border-border rounded-lg bg-muted/30 animate-fade-in">
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 bg-primary rounded-full" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <ThinkingAnimation className="mb-2" />
+                  <div className="text-sm text-muted-foreground">
+                    正在優化提示，請稍候...
+                  </div>
+                </div>
+              </div>
+            )}
+
             {rounds.length === 0 ? (
               <div className="text-center text-muted-foreground mt-16">
                 <p>Optimization results will appear here</p>

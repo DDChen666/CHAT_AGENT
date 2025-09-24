@@ -155,37 +155,38 @@ export const useSettingsStore = create<SettingsState>()(
         })),
 
       testConnections: async () => {
-        const results: { gemini: boolean; deepseek: boolean } = {
-          gemini: false,
-          deepseek: false,
-        }
-
-        // Get current state
         const currentState = get()
         const currentApiKeys = currentState.apiKeys
+        const previousStatus = currentState.connectionStatus
+
+        const updatedStatus: Settings['connectionStatus'] = {
+          gemini: previousStatus.gemini,
+          deepseek: previousStatus.deepseek,
+          lastTested: Date.now(),
+        }
 
         const providers = [
           { name: 'deepseek' as const, hasKey: !!currentApiKeys.deepseek },
-          { name: 'gemini' as const, hasKey: !!currentApiKeys.gemini }
+          { name: 'gemini' as const, hasKey: !!currentApiKeys.gemini },
         ]
 
         for (const provider of providers) {
-          if (provider.hasKey) {
-            try {
-              const response = await fetch(`/api/keys/test?provider=${provider.name}`)
-              const data = await response.json()
-              results[provider.name] = data.success || false
-            } catch {
-              results[provider.name] = false
-            }
+          if (!provider.hasKey) {
+            updatedStatus[provider.name] = false
+            continue
+          }
+
+          try {
+            const response = await fetch(`/api/keys/test?provider=${provider.name}`)
+            const data = await response.json()
+            updatedStatus[provider.name] = data.success || false
+          } catch {
+            updatedStatus[provider.name] = false
           }
         }
 
         set(() => ({
-          connectionStatus: {
-            ...results,
-            lastTested: Date.now(),
-          },
+          connectionStatus: updatedStatus,
         }))
       },
 
