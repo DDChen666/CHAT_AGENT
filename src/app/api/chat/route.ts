@@ -6,6 +6,10 @@ import { getTokenPayloadFromCookies } from '@/lib/auth'
 import { callProvider, type ChatMessage as ChatMsg, type ProviderName } from '@/lib/providers'
 import { Provider as DbProvider, MessageRole } from '@prisma/client'
 
+const MAX_MESSAGES = 60
+const MAX_MESSAGE_LENGTH = 4000
+const ALLOWED_ROLES: ReadonlyArray<'user' | 'assistant' | 'system'> = ['user', 'assistant', 'system']
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -20,16 +24,42 @@ export async function POST(request: NextRequest) {
       conversationId?: string
     }
 
-    if (!provider || !Array.isArray(messages)) {
-      return Response.json({ message: 'Invalid payload' }, { status: 400 })
+    if (provider !== 'gemini' && provider !== 'deepseek') {
+      return Response.json({ message: 'Invalid provider' }, { status: 400 })
+    }
+
+    if (!Array.isArray(messages) || messages.length === 0 || messages.length > MAX_MESSAGES) {
+      return Response.json({ message: 'Invalid messages payload' }, { status: 400 })
+    }
+
+    const normalizedMessages: ChatMsg[] = []
+    for (const entry of messages) {
+      if (!entry || typeof entry !== 'object') {
+        return Response.json({ message: 'Invalid message format' }, { status: 400 })
+      }
+      const { role, content } = entry as { role?: string; content?: unknown }
+      if (!role || !ALLOWED_ROLES.includes(role as ChatMsg['role'])) {
+        return Response.json({ message: 'Invalid message role' }, { status: 400 })
+      }
+      if (typeof content !== 'string') {
+        return Response.json({ message: 'Invalid message content' }, { status: 400 })
+      }
+      const trimmed = content.trim()
+      if (!trimmed) {
+        return Response.json({ message: 'Empty message content' }, { status: 400 })
+      }
+      if (trimmed.length > MAX_MESSAGE_LENGTH) {
+        return Response.json({ message: 'Message too long' }, { status: 413 })
+      }
+      normalizedMessages.push({ role: role as ChatMsg['role'], content: trimmed })
     }
 
     const chosenModel = model && model.trim()
       ? model.trim()
       : provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
 
-    // Resolve API key precedence: body > stored per-user > env
-    let effectiveKey = (apiKey || '').trim()
+    // Resolve API key precedence: request body > saved per-user credentials
+    let effectiveKey = (typeof apiKey === 'string' ? apiKey : '').trim()
     if (!effectiveKey) {
       const session = await getTokenPayloadFromCookies()
       if (session?.userId) {
@@ -44,11 +74,7 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!effectiveKey) {
-      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
-      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
-    }
-    if (!effectiveKey) {
-      return Response.json({ message: `No API key for ${provider}` }, { status: 400 })
+      return Response.json({ message: `No API key for ${provider}. Please provide a key in the request body or save one in your account settings.` }, { status: 400 })
     }
     // Optional persistence to DB if conversationId is provided and valid
     let validatedConversationId: string | null = null
@@ -64,8 +90,8 @@ export async function POST(request: NextRequest) {
       }
       validatedConversationId = conv.id
       // Find the latest user message content from provided messages
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i]
+      for (let i = normalizedMessages.length - 1; i >= 0; i--) {
+        const m = normalizedMessages[i]
         if (m.role === 'user' && m.content?.trim()) { lastUserMessageContent = m.content.trim(); break }
       }
       if (lastUserMessageContent) {
@@ -89,7 +115,7 @@ export async function POST(request: NextRequest) {
             const responseText = await callProvider(
               provider as ProviderName,
               chosenModel,
-              messages as ChatMsg[],
+              normalizedMessages,
               effectiveKey,
               { temperature, maxTokens }
             )
@@ -125,7 +151,7 @@ export async function POST(request: NextRequest) {
             const doneMessage = {
               type: 'done',
               usage: {
-                prompt_tokens: Math.ceil((messages as ChatMsg[]).reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
+                prompt_tokens: Math.ceil(normalizedMessages.reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
                 completion_tokens: Math.ceil(responseText.length / 4),
               },
             }
@@ -163,7 +189,7 @@ export async function POST(request: NextRequest) {
       const responseText = await callProvider(
         provider as ProviderName,
         chosenModel,
-        messages as ChatMsg[],
+        normalizedMessages,
         effectiveKey,
         { temperature, maxTokens }
       )
@@ -182,7 +208,7 @@ export async function POST(request: NextRequest) {
       return Response.json({
         message: responseText,
         usage: {
-          prompt_tokens: Math.ceil((messages as ChatMsg[]).reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
+          prompt_tokens: Math.ceil(normalizedMessages.reduce((sum: number, msg: ChatMsg) => sum + msg.content.length, 0) / 4),
           completion_tokens: Math.ceil(responseText.length / 4),
         },
         provider,

@@ -6,6 +6,9 @@ import { getTokenPayloadFromCookies } from '@/lib/auth'
 import { callProvider, type ProviderName } from '@/lib/providers'
 import { Provider as DbProvider } from '@prisma/client'
 
+const MAX_PROMPT_LENGTH = 6000
+const MAX_ITERATIONS = 20
+
 // 優化器邏輯
 class OptimizerClient {
   private improverPrompt: string
@@ -133,27 +136,65 @@ ${prompt}
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { 
-      initialPrompt, 
-      iterations = 8, 
-      threshold = 90, 
+    const {
+      initialPrompt,
+      iterations = 8,
+      threshold = 90,
       provider = 'gemini',
       apiKey,
       systemPrompts
-    } = body
+    } = body as {
+      initialPrompt?: unknown
+      iterations?: unknown
+      threshold?: unknown
+      provider?: unknown
+      apiKey?: unknown
+      systemPrompts?: { improver?: unknown; critic?: unknown }
+    }
 
-    const optimizer = new OptimizerClient(
-      systemPrompts?.improver,
-      systemPrompts?.critic
-    )
-    
-    // Resolve API key (body > saved per-user > env)
-    let effectiveKey = (apiKey || '').trim()
+    if (typeof initialPrompt !== 'string') {
+      return Response.json({ message: 'Initial prompt is required' }, { status: 400 })
+    }
+
+    const normalizedPrompt = initialPrompt.trim()
+    if (!normalizedPrompt) {
+      return Response.json({ message: 'Initial prompt cannot be empty' }, { status: 400 })
+    }
+    if (normalizedPrompt.length > MAX_PROMPT_LENGTH) {
+      return Response.json({ message: 'Initial prompt is too long' }, { status: 413 })
+    }
+
+    const providerNormalized = provider === 'deepseek' ? 'deepseek' : provider === 'gemini' ? 'gemini' : null
+    if (!providerNormalized) {
+      return Response.json({ message: 'Invalid provider' }, { status: 400 })
+    }
+
+    const iterationsNumber = Number(iterations)
+    const safeIterations = Number.isInteger(iterationsNumber) ? iterationsNumber : Math.floor(iterationsNumber)
+    if (!Number.isInteger(safeIterations) || safeIterations < 1 || safeIterations > MAX_ITERATIONS) {
+      return Response.json({ message: 'Iterations out of range' }, { status: 400 })
+    }
+
+    const thresholdNumber = Number(threshold)
+    if (!Number.isFinite(thresholdNumber) || thresholdNumber < 1 || thresholdNumber > 100) {
+      return Response.json({ message: 'Threshold out of range' }, { status: 400 })
+    }
+
+    const improverPrompt = typeof systemPrompts?.improver === 'string' ? systemPrompts.improver.trim() : undefined
+    const criticPrompt = typeof systemPrompts?.critic === 'string' ? systemPrompts.critic.trim() : undefined
+    if ((improverPrompt && improverPrompt.length > MAX_PROMPT_LENGTH) || (criticPrompt && criticPrompt.length > MAX_PROMPT_LENGTH)) {
+      return Response.json({ message: 'System prompt is too long' }, { status: 413 })
+    }
+
+    const optimizer = new OptimizerClient(improverPrompt, criticPrompt)
+
+    // Resolve API key (body > saved per-user)
+    let effectiveKey = (typeof apiKey === 'string' ? apiKey : '').trim()
     if (!effectiveKey) {
       const session = await getTokenPayloadFromCookies()
       if (session?.userId) {
         const rec = await prisma.apiKey.findUnique({
-          where: { userId_provider: { userId: session.userId, provider: (provider === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
+          where: { userId_provider: { userId: session.userId, provider: (providerNormalized === 'gemini' ? DbProvider.GEMINI : DbProvider.DEEPSEEK) } },
           select: { encryptedKey: true },
         })
         if (rec) {
@@ -163,8 +204,7 @@ export async function POST(request: NextRequest) {
       }
     }
     if (!effectiveKey) {
-      if (provider === 'gemini') effectiveKey = process.env.GOOGLE_GEMINI_API_KEY || ''
-      if (provider === 'deepseek') effectiveKey = process.env.DEEPSEEK_API_KEY || ''
+      return Response.json({ message: `No API key for ${providerNormalized}. Please provide a key in the request body or save one in your account settings.` }, { status: 400 })
     }
 
     const encoder = new TextEncoder()
@@ -173,17 +213,15 @@ export async function POST(request: NextRequest) {
         let bestScore = 0
         let bestPrompt = ''
 
-        for (let round = 1; round <= iterations; round++) {
-          // Use the optimizer to improve the prompt
-          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, provider, effectiveKey)
-          
-          // Generate review scores
-          const scores = await optimizer.generateReviewScores(improvedPrompt, provider, effectiveKey) as Record<string, number>
-          
+        for (let round = 1; round <= safeIterations; round++) {
+          const improvedPrompt = await optimizer.optimizePrompt(normalizedPrompt, providerNormalized, effectiveKey)
+
+          const scores = await optimizer.generateReviewScores(improvedPrompt, providerNormalized, effectiveKey) as Record<string, number>
+
           const totalScore = Math.round(
             Object.values(scores).reduce((sum: number, score: number) => sum + score, 0) / Object.values(scores).length
           )
-          
+
           const feedback = [
             'Enhanced clarity and specificity',
             'Added concrete constraints and examples',
@@ -191,13 +229,11 @@ export async function POST(request: NextRequest) {
             'Strengthened safety guidelines',
           ]
 
-          // Update best result
           if (totalScore > bestScore) {
             bestScore = totalScore
             bestPrompt = improvedPrompt
           }
 
-          // Send round data
           const roundData = {
             round,
             improved: improvedPrompt,
@@ -216,8 +252,7 @@ export async function POST(request: NextRequest) {
             encoder.encode(`data: ${JSON.stringify(roundData)}\n\n`)
           )
 
-          // Check stopping conditions
-          if (totalScore >= threshold) {
+          if (totalScore >= thresholdNumber) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({
                 type: 'final',
@@ -229,7 +264,7 @@ export async function POST(request: NextRequest) {
             break
           }
 
-          if (round === iterations) {
+          if (round === safeIterations) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({
                 type: 'final',

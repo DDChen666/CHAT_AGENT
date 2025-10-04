@@ -341,7 +341,6 @@ npm run build:test         # 建置測試
 DATABASE_URL="postgresql://user:pass@localhost:5432/chatbot_dev"
 DIRECT_URL="postgresql://user:pass@localhost:5432/chatbot_dev"
 AUTH_SECRET="your-dev-secret"
-GOOGLE_GEMINI_API_KEY="your-key"
 ```
 
 ### 故障排除

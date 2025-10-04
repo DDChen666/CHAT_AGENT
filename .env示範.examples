@@ -15,22 +15,12 @@ DIRECT_URL="postgresql://postgres:mypassword@localhost:5432/postgres"
 # - 或使用: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 AUTH_SECRET="請填入您的開發環境密鑰，至少32個字元"
 
-# 🤖 AI API 金鑰設定
-# -----------------------------------------------------------------------------
-# 🔴 必須: Google Gemini API 金鑰 (用於聊天功能)
-# 獲取方式: https://makersuite.google.com/app/apikey
-GOOGLE_GEMINI_API_KEY="請填入您的 Google Gemini API 金鑰"
-
-# 🔵 選用: DeepSeek API 金鑰 (可選備用 AI 服務)
-# 獲取方式: https://platform.deepseek.com/
-DEEPSEEK_API_KEY="請填入您的 DeepSeek API 金鑰（可選）"
-
 # =============================================================================
 # 📋 填寫步驟:
 # =============================================================================
 # 1. 複製此檔案: cp .env示範.examples .env.local
 # 2. 編輯 .env.local 檔案
-# 3. 填入您的 API 金鑰
+# 3. 填入必要的資料庫與 AUTH_SECRET 設定
 # 4. 儲存檔案
 # 5. 千萬不要將 .env.local 提交到 Git！
 
@@ -47,4 +37,4 @@ DEEPSEEK_API_KEY="請填入您的 DeepSeek API 金鑰（可選）"
 # DATABASE_URL: 您的生產 PostgreSQL 連線字串
 # DIRECT_URL: 您的生產 PostgreSQL 直接連線字串
 # AUTH_SECRET: 生產環境的認證金鑰
-# GOOGLE_GEMINI_API_KEY: 生產環境的 Gemini API 金鑰
+# Gemini / DeepSeek API 金鑰請改由登入後在應用程式內的設定頁面綁定，避免硬編碼在環境變數。
