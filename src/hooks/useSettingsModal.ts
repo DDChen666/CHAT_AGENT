@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSettingsStore } from '@/store/settingsStore'
 import { getModelOptions, refreshDynamicModels, type ProviderName } from '@/lib/providers'
 import { manualSync } from '@/lib/syncManager'
@@ -43,6 +43,11 @@ export function useSettingsModal(isOpen: boolean) {
   const [isTestingConnection, setIsTestingConnection] = useState<ProviderName | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [feedback, setFeedback] = useState<SettingsFeedback | null>(null)
+  const dynamicModelsRef = useRef<DynamicModels>(dynamicModels)
+
+  useEffect(() => {
+    dynamicModelsRef.current = dynamicModels
+  }, [dynamicModels])
 
   const dismissFeedback = useCallback(() => setFeedback(null), [])
 
@@ -92,11 +97,11 @@ export function useSettingsModal(isOpen: boolean) {
         title: 'Unable to refresh provider models',
         description: 'Using cached or fallback models until the network issue is resolved.',
       })
-      return dynamicModels
+      return dynamicModelsRef.current || getModelOptions()
     } finally {
       setIsRefreshingModels(false)
     }
-  }, [apiKeys.deepseek, apiKeys.gemini, dynamicModels, ensurePreferenceDefaults, modelSettings.defaultProvider])
+  }, [apiKeys.deepseek, apiKeys.gemini, ensurePreferenceDefaults, modelSettings.defaultProvider])
 
   const testProviderConnection = useCallback(
     async (provider: ProviderName) => {
