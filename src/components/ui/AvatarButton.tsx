@@ -13,7 +13,7 @@ export default function AvatarButton({ onClick, title = 'Account', size = 32 }: 
     <button
       onClick={onClick}
       title={title}
-      className="inline-flex items-center justify-center rounded-full border border-border hover:bg-accent transition-colors"
+      className="inline-flex items-center justify-center rounded-full border border-border hover:bg-accent transition-all duration-200 btn-smooth"
       style={{ width: size, height: size }}
     >
       {/* Minimal person SVG */}

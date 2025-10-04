@@ -6,17 +6,20 @@ import { useAppStore } from '@/store/appStore'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import ThinkingAnimation from './ThinkingAnimation'
 
 interface OptimizerInterfaceProps {
   tabId: string
 }
 
 export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
-  const { optimizerStates, setOptimizerInitialPrompt, addOptimizerRound, setOptimizerBestResult } = useAppStore()
+  const { optimizerStates, setOptimizerInitialPrompt, addOptimizerRound, setOptimizerBestResult, resetOptimizerProgress } = useAppStore()
   const { modelSettings, apiKeys } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [currentRound, setCurrentRound] = useState(0)
+
+  const activeProviderKey = modelSettings.defaultProvider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
 
   const optimizerState = optimizerStates[tabId]
   const rounds = optimizerState?.rounds || []
@@ -25,15 +28,20 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
   const handleStartOptimization = async () => {
     if (!input.trim() || isOptimizing) return
 
+    const provider = modelSettings.defaultProvider
+    const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
+    if (!selectedKey) {
+      toast.error(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'DeepSeek'} API key in Settings before optimizing.`)
+      return
+    }
+
+    resetOptimizerProgress(tabId)
     setOptimizerInitialPrompt(tabId, input.trim())
     setIsOptimizing(true)
     setCurrentRound(0)
 
     try {
-      // Call the actual optimization API
-      const provider = modelSettings.defaultProvider
-      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
-
       const response = await fetch('/api/optimize', {
         method: 'POST',
         headers: {
@@ -44,12 +52,28 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           iterations: 8,
           threshold: 90,
           provider,
-          apiKey: selectedKey || undefined,
+          apiKey: selectedKey,
         }),
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        let errorMessage = `HTTP error! status: ${response.status}`
+        try {
+          const data = await response.json()
+          if (data?.message) {
+            errorMessage = data.message
+          }
+        } catch {
+          try {
+            const text = await response.text()
+            if (text) {
+              errorMessage = text
+            }
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const reader = response.body?.getReader()
@@ -105,7 +129,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
       }
     } catch (error) {
       console.error('Optimization error:', error)
-      toast.error('Optimization failed. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'Optimization failed. Please try again.')
     } finally {
       setIsOptimizing(false)
     }
@@ -187,10 +211,10 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
             ) : (
               <button
                 onClick={handleStartOptimization}
-                disabled={!input.trim()}
+                disabled={!input.trim() || !activeProviderKey}
                 className={cn(
                   'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg transition-colors',
-                  input.trim()
+                  input.trim() && activeProviderKey
                     ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                     : 'bg-muted text-muted-foreground cursor-not-allowed'
                 )}
@@ -214,9 +238,23 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
 
         {/* Middle Column - Improver Results */}
         <div className="flex-1 border-r border-border overflow-y-auto">
-          <div className="p-4">
+          <div className="p-4 space-y-4">
             <h3 className="text-lg font-semibold mb-4">Improved Prompts</h3>
-            
+
+            {isOptimizing && (
+              <div className="flex items-start space-x-3 p-4 border border-dashed border-border rounded-lg bg-muted/30 animate-fade-in">
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-6 h-6 bg-primary rounded-full" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <ThinkingAnimation className="mb-2" />
+                  <div className="text-sm text-muted-foreground">
+                    正在優化提示，請稍候...
+                  </div>
+                </div>
+              </div>
+            )}
+
             {rounds.length === 0 ? (
               <div className="text-center text-muted-foreground mt-16">
                 <p>Optimization results will appear here</p>

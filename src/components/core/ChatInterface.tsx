@@ -15,7 +15,7 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ tabId }: ChatInterfaceProps) {
   const { chatStates, addChatMessage, updateChatMessage } = useAppStore()
-  const { features, modelSettings, apiKeys } = useSettingsStore()
+  const { features, modelSettings, apiKeys, systemPrompts } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
@@ -57,6 +57,14 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
     if (!input.trim() || isStreaming) return
 
     const userMessage = input.trim()
+    const provider = modelSettings.defaultProvider
+    const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
+
+    if (!selectedKey) {
+      toast.error(`Please configure your ${provider === 'gemini' ? 'Gemini' : 'DeepSeek'} API key in Settings before chatting.`)
+      return
+    }
+
     setInput('')
     addChatMessage(tabId, { role: 'user', content: userMessage })
 
@@ -67,8 +75,6 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
     try {
       // Call the actual API
-      const provider = modelSettings.defaultProvider
-      const selectedKey = provider === 'gemini' ? apiKeys.gemini : apiKeys.deepseek
 
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -78,17 +84,37 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
         body: JSON.stringify({
           provider,
           model: modelSettings.defaultModel,
-          messages: [...messages, { role: 'user', content: userMessage }],
+          messages: [
+            ...(systemPrompts.chat ? [{ role: 'system' as const, content: systemPrompts.chat }] : []),
+            ...messages,
+            { role: 'user' as const, content: userMessage }
+          ],
           temperature: modelSettings.temperature,
           stream: true,
           enableCache: features.enableGeminiCache,
-          apiKey: selectedKey || undefined,
+          apiKey: selectedKey,
         }),
         signal: controller.signal,
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        let errorMessage = `HTTP error! status: ${response.status}`
+        try {
+          const data = await response.json()
+          if (data?.message) {
+            errorMessage = data.message
+          }
+        } catch {
+          try {
+            const text = await response.text()
+            if (text) {
+              errorMessage = text
+            }
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const reader = response.body?.getReader()
@@ -107,21 +133,29 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
 
             for (const line of lines) {
               if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6)
+
+                // Skip the [DONE] signal
+                if (dataStr === '[DONE]') {
+                  continue
+                }
+
                 try {
-                  const data = JSON.parse(line.slice(6))
-                  
-                  if (data.type === 'chunk' && data.delta) {
-                    assistantMessage += data.delta
-                    
+                  const data = JSON.parse(dataStr)
+
+                  // Handle OpenAI-compatible format
+                  if (data.choices && data.choices[0] && data.choices[0].delta && data.choices[0].delta.content) {
+                    assistantMessage += data.choices[0].delta.content
+
                     // Update the last message with streaming content
                     if (assistantMessageId) {
                       // Update existing assistant message
                       updateChatMessage(tabId, assistantMessageId, assistantMessage)
                     } else {
                       // Create new assistant message on first chunk
-                      assistantMessageId = addChatMessage(tabId, { 
-                        role: 'assistant', 
-                        content: assistantMessage 
+                      assistantMessageId = addChatMessage(tabId, {
+                        role: 'assistant',
+                        content: assistantMessage
                       })
                     }
                   }
@@ -141,7 +175,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
         console.log('Request aborted')
       } else {
         console.error('Streaming error:', error)
-        toast.error('Failed to send message. Please try again.')
+        toast.error(error instanceof Error ? error.message : 'Failed to send message. Please try again.')
         addChatMessage(tabId, {
           role: 'assistant',
           content: 'Sorry, I encountered an error. Please try again.',
@@ -234,7 +268,7 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
             <button
               type="button"
               onClick={stopStreaming}
-              className="px-4 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors"
+              className="px-4 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-all duration-200 btn-smooth"
               aria-label="Stop generating"
             >
               <StopCircle className="w-5 h-5" />
@@ -244,9 +278,9 @@ export default function ChatInterface({ tabId }: ChatInterfaceProps) {
               type="submit"
               disabled={!input.trim()}
               className={cn(
-                'px-4 py-3 rounded-lg transition-colors',
+                'px-4 py-3 rounded-lg transition-all duration-200',
                 input.trim()
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 btn-smooth'
                   : 'bg-muted text-muted-foreground cursor-not-allowed'
               )}
               aria-label="Send message"

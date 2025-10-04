@@ -2,73 +2,48 @@
 
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
+import { useAuthStore } from '@/store/authStore'
 
 type Props = { open: boolean; onOpenChange: (open: boolean) => void }
 
 export default function AuthModal({ open, onOpenChange }: Props) {
+  const { user, login, register, logout, isLoading } = useAuthStore()
   const [tab, setTab] = useState<'login'|'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [user, setUser] = useState<{ id: string; email: string; name?: string; isAdmin: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    ;(async () => {
-      try {
-        const res = await fetch('/api/auth/me', { cache: 'no-store' })
-        if (res.ok) {
-          const j = await res.json()
-          setUser(j.user || null)
-        } else {
-          setUser(null)
-        }
-      } catch { setUser(null) }
-    })()
-  }, [open])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true); setError(null)
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      })
-      const j = await res.json()
-      if (!res.ok) throw new Error(j?.message || 'Login failed')
-      setUser(j.user)
+    setError(null)
+    const result = await login(email, password)
+    if (result.success) {
+      setEmail('')
+      setPassword('')
       onOpenChange(false)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed')
-    } finally { setLoading(false) }
+    } else {
+      setError(result.message || 'Login failed')
+    }
   }
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
-    setLoading(true); setError(null)
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name })
-      })
-      const j = await res.json()
-      if (!res.ok) throw new Error(j?.message || 'Register failed')
-      setUser(j.user)
+    setError(null)
+    const result = await register(email, password, name)
+    if (result.success) {
+      setEmail('')
+      setPassword('')
+      setName('')
       onOpenChange(false)
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Register failed')
-    } finally { setLoading(false) }
+    } else {
+      setError(result.message || 'Registration failed')
+    }
   }
 
   async function handleLogout() {
-    setLoading(true)
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      setUser(null)
-    } finally { setLoading(false) }
+    await logout()
+    onOpenChange(false)
   }
 
   return (
@@ -84,7 +59,9 @@ export default function AuthModal({ open, onOpenChange }: Props) {
               {user.name && <div className="text-muted-foreground">{user.name}</div>}
               {user.isAdmin && <div className="text-xs mt-1 inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800">Admin</div>}
             </div>
-            <button onClick={handleLogout} disabled={loading} className="w-full px-4 py-2 border border-border rounded hover:bg-accent transition-colors">Logout</button>
+            <button onClick={handleLogout} disabled={isLoading} className="w-full px-4 py-2 border border-border rounded hover:bg-accent transition-colors">
+              {isLoading ? 'Logging out...' : 'Logout'}
+            </button>
           </div>
         ) : (
           <div className="space-y-4">
@@ -103,7 +80,9 @@ export default function AuthModal({ open, onOpenChange }: Props) {
                   <input value={password} onChange={e=>setPassword(e.target.value)} type="password" required className="w-full px-3 py-2 border border-border rounded" />
                 </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}
-                <button type="submit" disabled={loading} className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">Login</button>
+                <button type="submit" disabled={isLoading} className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">
+                  {isLoading ? 'Logging in...' : 'Login'}
+                </button>
               </form>
             ) : (
               <form onSubmit={handleRegister} className="space-y-3">
@@ -120,7 +99,9 @@ export default function AuthModal({ open, onOpenChange }: Props) {
                   <input value={password} onChange={e=>setPassword(e.target.value)} type="password" required minLength={8} className="w-full px-3 py-2 border border-border rounded" />
                 </div>
                 {error && <div className="text-red-600 text-sm">{error}</div>}
-                <button type="submit" disabled={loading} className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">Create account</button>
+                <button type="submit" disabled={isLoading} className="w-full px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">
+                  {isLoading ? 'Creating account...' : 'Create account'}
+                </button>
               </form>
             )}
           </div>

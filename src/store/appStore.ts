@@ -2,9 +2,19 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { generateId } from '@/lib/utils'
 
+interface SyncResult {
+  conflict?: boolean
+  serverVersion?: number
+  clientVersion?: number
+  lastSyncAt?: string
+  success?: boolean
+  version?: number
+  conflictResolved?: boolean
+}
+
 export interface Tab {
   id: string
-  type: 'chat' | 'optimizer'
+  type: 'chat' | 'optimizer' | 'aipk' | 'file2file'
   title: string
   createdAt: number
   updatedAt: number
@@ -15,6 +25,20 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: number
+}
+
+export interface AIPKChat {
+  id: string
+  model: string
+  provider: string
+  messages: ChatMessage[]
+  isLoading: boolean
+}
+
+export interface AIPKState {
+  tabId: string
+  prompt: string
+  chats: AIPKChat[]
 }
 
 export interface ChatState {
@@ -40,28 +64,66 @@ export interface OptimizerState {
   }
 }
 
+export interface File2FileState {
+  tabId: string
+  inputText: string
+  isConverting: boolean
+  isDownloading: boolean
+  error: string | null
+  success: boolean
+  lastConvertedAt?: number
+}
+
 interface AppState {
   // Tabs management
   tabs: Tab[]
   activeTab: string | null
-  
+
   // Actions
   setActiveTab: (tabId: string) => void
   createChatTab: () => void
   createOptimizerTab: () => void
+  createAIPKTab: () => void
   closeTab: (tabId: string) => void
   updateTabTitle: (tabId: string, title: string) => void
-  
+
   // Chat states
   chatStates: Record<string, ChatState>
   addChatMessage: (tabId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => string
   updateChatMessage: (tabId: string, messageId: string, content: string) => void
-  
+
   // Optimizer states
   optimizerStates: Record<string, OptimizerState>
   setOptimizerInitialPrompt: (tabId: string, prompt: string) => void
   addOptimizerRound: (tabId: string, round: OptimizerState['rounds'][0]) => void
   setOptimizerBestResult: (tabId: string, result: OptimizerState['bestResult']) => void
+  resetOptimizerProgress: (tabId: string) => void
+
+  // AIPK states
+  aipkStates: Record<string, AIPKState>
+  setAIPKPrompt: (tabId: string, prompt: string) => void
+  addAIPKChat: (tabId: string, model: string, provider: string) => string
+  removeAIPKChat: (tabId: string, chatId: string) => void
+  updateAIPKChatModel: (tabId: string, chatId: string, model: string, provider: string) => void
+  addAIPKMessage: (tabId: string, chatId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>) => string
+  updateAIPKMessage: (tabId: string, chatId: string, messageId: string, content: string) => void
+  setAIPKChatLoading: (tabId: string, chatId: string, isLoading: boolean) => void
+
+  // File2File states
+  file2fileStates: Record<string, File2FileState>
+  setFile2FileInputText: (tabId: string, inputText: string) => void
+  setFile2FileConverting: (tabId: string, isConverting: boolean) => void
+  setFile2FileDownloading: (tabId: string, isDownloading: boolean) => void
+  setFile2FileError: (tabId: string, error: string | null) => void
+  setFile2FileSuccess: (tabId: string, success: boolean) => void
+  createFile2FileTab: () => void
+
+  // Sync functionality
+  syncToServer: (forceOverwrite?: boolean) => Promise<SyncResult | undefined>
+  loadFromServer: () => Promise<void>
+  syncStatus: 'idle' | 'syncing' | 'success' | 'error'
+  lastSyncAt: number | null
+  setSyncStatus: (status: AppState['syncStatus']) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -71,6 +133,10 @@ export const useAppStore = create<AppState>()(
       activeTab: null,
       chatStates: {},
       optimizerStates: {},
+      aipkStates: {},
+      file2fileStates: {},
+      syncStatus: 'idle' as const,
+      lastSyncAt: null,
 
       setActiveTab: (tabId) => set({ activeTab: tabId }),
 
@@ -121,6 +187,71 @@ export const useAppStore = create<AppState>()(
         }))
       },
 
+      createAIPKTab: () => {
+        const tabId = generateId()
+        const chatId = generateId()
+        const newTab: Tab = {
+          id: tabId,
+          type: 'aipk',
+          title: 'AI PK',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+
+        // Use default provider and model from settings store
+        // We'll handle this in the component instead to avoid circular dependencies
+        const defaultProvider = 'gemini' as const
+        const defaultModel = 'gemini-2.5-flash'
+
+        const defaultChat: AIPKChat = {
+          id: chatId,
+          model: defaultModel,
+          provider: defaultProvider,
+          messages: [],
+          isLoading: false,
+        }
+
+        set((state) => ({
+          tabs: [...state.tabs, newTab],
+          activeTab: tabId,
+          aipkStates: {
+            ...state.aipkStates,
+            [tabId]: {
+              tabId,
+              prompt: '請輸出繁體中文回覆',
+              chats: [defaultChat],
+            },
+          },
+        }))
+      },
+
+      createFile2FileTab: () => {
+        const tabId = generateId()
+        const newTab: Tab = {
+          id: tabId,
+          type: 'file2file',
+          title: 'File to File',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }
+
+        set((state) => ({
+          tabs: [...state.tabs, newTab],
+          activeTab: tabId,
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              tabId,
+              inputText: '',
+              isConverting: false,
+              isDownloading: false,
+              error: null,
+              success: false,
+            },
+          },
+        }))
+      },
+
       closeTab: (tabId) => {
         set((state) => {
           const newTabs = state.tabs.filter(tab => tab.id !== tabId)
@@ -134,11 +265,19 @@ export const useAppStore = create<AppState>()(
           const newOptimizerStates = { ...state.optimizerStates }
           delete newOptimizerStates[tabId]
 
+          const newAIPKStates = { ...state.aipkStates }
+          delete newAIPKStates[tabId]
+
+          const newFile2FileStates = { ...state.file2fileStates }
+          delete newFile2FileStates[tabId]
+
           return {
             tabs: newTabs,
             activeTab: newActiveTab,
             chatStates: newChatStates,
             optimizerStates: newOptimizerStates,
+            aipkStates: newAIPKStates,
+            file2fileStates: newFile2FileStates,
           }
         })
       },
@@ -230,14 +369,338 @@ export const useAppStore = create<AppState>()(
           },
         }))
       },
+
+      resetOptimizerProgress: (tabId) => {
+        set((state) => {
+          const current = state.optimizerStates[tabId] || { tabId, initialPrompt: '', rounds: [] as OptimizerState['rounds'] }
+          return {
+            optimizerStates: {
+              ...state.optimizerStates,
+              [tabId]: {
+                ...current,
+                rounds: [],
+                bestResult: undefined,
+              },
+            },
+          }
+        })
+      },
+
+      setAIPKPrompt: (tabId, prompt) => {
+        set((state) => ({
+          aipkStates: {
+            ...state.aipkStates,
+            [tabId]: {
+              ...state.aipkStates[tabId],
+              prompt,
+            },
+          },
+        }))
+      },
+
+      addAIPKChat: (tabId, model, provider) => {
+        const chatId = generateId()
+        const newChat: AIPKChat = {
+          id: chatId,
+          model,
+          provider,
+          messages: [],
+          isLoading: false,
+        }
+
+        set((state) => ({
+          aipkStates: {
+            ...state.aipkStates,
+            [tabId]: {
+              ...state.aipkStates[tabId],
+              chats: [...state.aipkStates[tabId].chats, newChat],
+            },
+          },
+        }))
+
+        return chatId
+      },
+
+      removeAIPKChat: (tabId, chatId) => {
+        set((state) => ({
+          aipkStates: {
+            ...state.aipkStates,
+            [tabId]: {
+              ...state.aipkStates[tabId],
+              chats: state.aipkStates[tabId].chats.filter(chat => chat.id !== chatId),
+            },
+          },
+        }))
+      },
+
+      updateAIPKChatModel: (tabId, chatId, model, provider) => {
+        set((state) => {
+          const currentState = state.aipkStates[tabId]
+          if (!currentState) {
+            console.warn(`AIPK state not found for tab ${tabId}`)
+            return state
+          }
+
+          return {
+            aipkStates: {
+              ...state.aipkStates,
+              [tabId]: {
+                ...currentState,
+                chats: currentState.chats.map(chat =>
+                  chat.id === chatId ? { ...chat, model, provider } : chat
+                ),
+              },
+            },
+          }
+        })
+      },
+
+      addAIPKMessage: (tabId, chatId, message) => {
+        const newMessage: ChatMessage = {
+          ...message,
+          id: generateId(),
+          timestamp: Date.now(),
+        }
+
+        set((state) => {
+          const currentState = state.aipkStates[tabId]
+          if (!currentState) {
+            console.warn(`AIPK state not found for tab ${tabId}`)
+            return state
+          }
+
+          return {
+            aipkStates: {
+              ...state.aipkStates,
+              [tabId]: {
+                ...currentState,
+                chats: currentState.chats.map(chat =>
+                  chat.id === chatId
+                    ? { ...chat, messages: [...chat.messages, newMessage] }
+                    : chat
+                ),
+              },
+            },
+          }
+        })
+
+        return newMessage.id
+      },
+
+      updateAIPKMessage: (tabId, chatId, messageId, content) => {
+        set((state) => {
+          const currentState = state.aipkStates[tabId]
+          if (!currentState) {
+            console.warn(`AIPK state not found for tab ${tabId}`)
+            return state
+          }
+
+          return {
+            aipkStates: {
+              ...state.aipkStates,
+              [tabId]: {
+                ...currentState,
+                chats: currentState.chats.map(chat =>
+                  chat.id === chatId
+                    ? {
+                        ...chat,
+                        messages: chat.messages.map(msg =>
+                          msg.id === messageId ? { ...msg, content } : msg
+                        ),
+                      }
+                    : chat
+                ),
+              },
+            },
+          }
+        })
+      },
+
+      setAIPKChatLoading: (tabId, chatId, isLoading) => {
+        set((state) => {
+          const currentState = state.aipkStates[tabId]
+          if (!currentState) {
+            console.warn(`AIPK state not found for tab ${tabId}`)
+            return state
+          }
+
+          return {
+            aipkStates: {
+              ...state.aipkStates,
+              [tabId]: {
+                ...currentState,
+                chats: currentState.chats.map(chat =>
+                  chat.id === chatId ? { ...chat, isLoading } : chat
+                ),
+              },
+            },
+          }
+        })
+      },
+
+      setFile2FileInputText: (tabId, inputText) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              inputText,
+              error: null,
+              success: false,
+            },
+          },
+        }))
+      },
+
+      setFile2FileConverting: (tabId, isConverting) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              isConverting,
+            },
+          },
+        }))
+      },
+
+      setFile2FileDownloading: (tabId, isDownloading) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              isDownloading,
+            },
+          },
+        }))
+      },
+
+      setFile2FileError: (tabId, error) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              error,
+              success: false,
+            },
+          },
+        }))
+      },
+
+      setFile2FileSuccess: (tabId, success) => {
+        set((state) => ({
+          file2fileStates: {
+            ...state.file2fileStates,
+            [tabId]: {
+              ...state.file2fileStates[tabId],
+              success,
+              error: null,
+              lastConvertedAt: success ? Date.now() : undefined,
+            },
+          },
+        }))
+      },
+
+      // Sync functionality
+      setSyncStatus: (syncStatus) => set({ syncStatus }),
+
+      syncToServer: async (forceOverwrite = false) => {
+        try {
+          set({ syncStatus: 'syncing' })
+
+          const currentState = get()
+          const appStateData = {
+            tabs: currentState.tabs,
+            activeTab: currentState.activeTab,
+            chatStates: currentState.chatStates,
+            optimizerStates: currentState.optimizerStates,
+            aipkStates: currentState.aipkStates,
+          }
+
+          const response = await fetch('/api/app-state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              state: appStateData,
+              clientVersion: currentState.lastSyncAt ? 1 : 0,
+              forceOverwrite,
+            }),
+          })
+
+          const result = await response.json()
+
+          if (!response.ok) {
+            // 處理衝突
+            if (response.status === 409 && result.conflict) {
+              return {
+                conflict: true,
+                serverVersion: result.serverVersion,
+                clientVersion: result.clientVersion,
+                lastSyncAt: result.lastSyncAt,
+              }
+            }
+            throw new Error(`App state sync failed: ${response.status} - ${result.message}`)
+          }
+
+          set({
+            syncStatus: 'success',
+            lastSyncAt: Date.now()
+          })
+
+          return result
+        } catch (error) {
+          console.error('App state sync error:', error)
+          set({ syncStatus: 'error' })
+          throw error
+        }
+      },
+
+      loadFromServer: async () => {
+        try {
+          set({ syncStatus: 'syncing' })
+
+          const response = await fetch('/api/app-state')
+          if (!response.ok) {
+            throw new Error(`Load app state failed: ${response.status}`)
+          }
+
+          const result = await response.json()
+
+          if (result.state) {
+            set({
+              ...result.state,
+              syncStatus: 'success',
+              lastSyncAt: result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now(),
+            })
+          } else {
+            set({
+              syncStatus: 'success',
+              lastSyncAt: Date.now()
+            })
+          }
+
+          return result
+        } catch (error) {
+          console.error('Load app state error:', error)
+          set({ syncStatus: 'error' })
+          throw error
+        }
+      },
+
     }),
     {
       name: 'synapse-storage',
+      // 排除同步狀態不持久化，只保留應用狀態
       partialize: (state) => ({
         tabs: state.tabs,
         activeTab: state.activeTab,
         chatStates: state.chatStates,
         optimizerStates: state.optimizerStates,
+        aipkStates: state.aipkStates,
+        file2fileStates: state.file2fileStates,
+        // 不持久化同步狀態
       }),
     }
   )

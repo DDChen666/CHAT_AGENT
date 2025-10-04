@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { Save, TestTube, RefreshCw, ChevronDown, ChevronRight, X, Info, Cloud } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/Dialog'
 import { useSettingsStore } from '@/store/settingsStore'
 import { cn } from '@/lib/utils'
 import { getModelOptions, refreshDynamicModels, type ProviderName } from '@/lib/providers'
+import { manualSync } from '@/lib/syncManager'
 
 interface SettingsModalProps {
   open: boolean
@@ -63,21 +64,55 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     modelSettings,
     systemPrompts,
     features,
+    connectionStatus,
+    userModelPreferences,
     setApiKey,
     setModelSettings,
     setSystemPrompt,
     setFeature,
+    testConnections,
+    addPreferredModel,
+    removePreferredModel,
+    setConnectionStatus,
   } = useSettingsStore()
 
   const [isTesting, setIsTesting] = useState(false)
-  const [status, setStatus] = useState<{ gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' }>({ gemini: 'unknown', deepseek: 'unknown' })
   const [dynamicModels, setDynamicModels] = useState<Record<ProviderName, string[]>>(getModelOptions())
   const [isRefreshingModels, setIsRefreshingModels] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
 
-  // Compute model list bound to provider
+  // Selector function to filter models based on user preferences
+  const getFilteredModels = useCallback((provider: ProviderName, availableModels: string[]) => {
+    const preferredModels = userModelPreferences[provider] || []
+
+    // If no preferences set, return all available models
+    if (preferredModels.length === 0) {
+      return availableModels
+    }
+
+    // Return intersection of available models and user preferences
+    return availableModels.filter(model => preferredModels.includes(model))
+  }, [userModelPreferences])
+
+  // Compute model list bound to provider with user preferences
   const availableModels = useMemo(() => {
-    return dynamicModels[modelSettings.defaultProvider] || []
-  }, [dynamicModels, modelSettings.defaultProvider])
+    const allModels = dynamicModels[modelSettings.defaultProvider] || []
+    return getFilteredModels(modelSettings.defaultProvider, allModels)
+  }, [dynamicModels, modelSettings.defaultProvider, getFilteredModels])
+
+  // Initialize user preferences with all available models if not set
+  useEffect(() => {
+    if (open && dynamicModels[modelSettings.defaultProvider]) {
+      const provider = modelSettings.defaultProvider
+      const allModels = dynamicModels[provider] || []
+      const currentPreferences = userModelPreferences[provider]
+
+      // If no preferences are set, initialize with all available models
+      if (currentPreferences.length === 0 && allModels.length > 0) {
+        allModels.forEach(model => addPreferredModel(provider, model))
+      }
+    }
+  }, [open, dynamicModels, modelSettings.defaultProvider, userModelPreferences, addPreferredModel])
 
   // Ensure defaultModel belongs to current provider
   useEffect(() => {
@@ -107,74 +142,47 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
     }
 
     refreshModels()
-  }, [open, apiKeys.gemini, apiKeys.deepseek])
+    // Also test connections when modal opens
+    if (open) {
+      console.log('Testing connections on modal open...')
+      testConnections().then(() => {
+        console.log('Connection test completed')
+      }).catch((error) => {
+        console.error('Connection test failed:', error)
+      })
+    }
+  }, [open, apiKeys.gemini, apiKeys.deepseek, testConnections])
 
-  // Load saved keys and test status lights (server-saved keys)
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch('/api/keys', { cache: 'no-store' })
-        if (!res.ok) throw new Error('failed')
-        const data = await res.json()
-        const map: Record<'gemini'|'deepseek', { hasKey: boolean } | undefined> = { gemini: undefined, deepseek: undefined }
-        for (const k of (data.keys || []) as Array<{ provider: 'gemini'|'deepseek' }>) { map[k.provider] = { hasKey: true } }
-        const next: { gemini: 'unknown'|'ok'|'fail'|'missing'; deepseek: 'unknown'|'ok'|'fail'|'missing' } = {
-          gemini: map.gemini ? 'fail' : 'missing',
-          deepseek: map.deepseek ? 'fail' : 'missing'
-        }
-        setStatus(next)
-
-        // Try server-side test for those present
-        const providers = ['gemini','deepseek'] as const
-        await Promise.all(providers.map(async (p) => {
-          if (!map[p]) return
-          const r = await fetch(`/api/keys/test?provider=${p}`)
-          const ok = r.ok && (await r.json()).success
-          if (!cancelled) setStatus((s) => ({ ...s, [p]: ok ? 'ok' : 'fail' }))
-        }))
-      } catch {
-        // if fetch keys fails, keep unknown
-      }
-    })()
-    return () => { cancelled = true }
-  }, [])
-
-  // Also test currently typed keys (client-side) for quick feedback
-  useEffect(() => {
-    let aborted = false
-    ;(async () => {
-      const { gemini: geminiKey, deepseek: deepseekKey } = apiKeys
-      const toTest: Array<['gemini'|'deepseek', string]> = []
-      if (geminiKey) toTest.push(['gemini', geminiKey])
-      if (deepseekKey) toTest.push(['deepseek', deepseekKey])
-      for (const [p, key] of toTest) {
-        if (!key) continue
-        try {
-          const r = await fetch('/api/test', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider: p, apiKey: key })
-          })
-          const j = await r.json()
-          if (!aborted) setStatus((s) => ({ ...s, [p]: j.success ? 'ok' : 'fail' }))
-        } catch {
-          if (!aborted) setStatus((s) => ({ ...s, [p]: 'fail' }))
-        }
-      }
-    })()
-    return () => { aborted = true }
-  }, [apiKeys])
 
   const handleSave = () => {
     // Settings are automatically saved to the store
     onOpenChange(false)
   }
 
+  const handleManualSync = async () => {
+    setIsSyncing(true)
+    try {
+      const result = await manualSync()
+      if (result.settingsConflict || result.appStateConflict) {
+        alert('⚠️ 同步完成，但存在衝突。請檢查資料是否正確。')
+      } else {
+        alert('✅ 資料同步完成！')
+      }
+    } catch (error) {
+      console.error('Manual sync failed:', error)
+      alert('❌ 同步失敗，請檢查網路連線或重新登入。')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
   const handleTestConnection = async (provider: string) => {
+    console.log(`Testing connection for ${provider}...`)
     setIsTesting(true)
+    const providerKey = provider as 'gemini' | 'deepseek'
     try {
       const apiKey = apiKeys[provider as keyof typeof apiKeys]
-      
+
       const response = await fetch('/api/test', {
         method: 'POST',
         headers: {
@@ -184,9 +192,10 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
       })
       
       const result = await response.json()
-      
+
       if (result.success) {
         alert(`✅ ${provider.toUpperCase()} API connection successful!\n${result.message}`)
+        setConnectionStatus(providerKey, true)
         // Save to server after success
         const saveRes = await fetch('/api/keys', {
           method: 'POST',
@@ -194,21 +203,20 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
           body: JSON.stringify({ provider, apiKey })
         })
         if (saveRes.ok) {
-          const r = await fetch(`/api/keys/test?provider=${provider}`)
-          const ok = r.ok && (await r.json()).success
-          setStatus((s) => ({ ...s, [provider]: ok ? 'ok' : 'fail' }))
+          // Connection saved successfully, testConnections will update the status
+          await testConnections()
         } else if (saveRes.status === 401) {
           // Not logged in: keep green because key tested OK locally
-          setStatus((s) => ({ ...s, [provider]: 'ok' }))
+          alert(`✅ ${provider.toUpperCase()} API key saved locally`)
         }
       } else {
         alert(`❌ ${provider.toUpperCase()} API connection failed:\n${result.message}`)
-        setStatus((s) => ({ ...s, [provider]: 'fail' }))
+        setConnectionStatus(providerKey, false)
       }
     } catch (error) {
       console.error('Connection test failed:', error)
       alert(`❌ ${provider.toUpperCase()} API connection test failed: Network error`)
-      setStatus((s) => ({ ...s, [provider]: 'fail' }))
+      setConnectionStatus(providerKey, false)
     } finally {
       setIsTesting(false)
     }
@@ -254,7 +262,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 }
 
 不要輸出任何 JSON 以外的內容。`,
-      chat: '請輸出繁體中文'
+      chat: '請輸出繁體中文回覆'
     }
 
     setSystemPrompt(promptType, defaultPrompts[promptType])
@@ -262,38 +270,42 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            Settings
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="w-[95vw] max-w-[600px] max-h-[90vh] flex flex-col h-[90vh] !grid-cols-none !gap-0">
+        {/* Fixed Header and Status */}
+        <div className="flex-shrink-0 space-y-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Settings
+            </DialogTitle>
+          </DialogHeader>
 
-        {/* Status lights */}
-        <div className="mb-4 grid grid-cols-2 gap-3">
-          {(['gemini','deepseek'] as const).map((p) => (
-            <div key={p} className="flex items-center gap-2">
-              <span className={cn(
-                'inline-block w-2.5 h-2.5 rounded-full',
-                status[p] === 'ok' && 'bg-green-500',
-                status[p] === 'fail' && 'bg-red-500',
-                status[p] === 'missing' && 'bg-gray-400',
-                status[p] === 'unknown' && 'bg-yellow-400'
-              )} />
-              <span className="text-sm">
-                {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {status[p] === 'ok' && 'Connected'}
-                {status[p] === 'fail' && 'Key invalid or error'}
-                {status[p] === 'missing' && 'No key saved'}
-                {status[p] === 'unknown' && 'Checking...'}
-              </span>
-            </div>
-          ))}
+          {/* Status lights - Fixed at top */}
+          <div className="grid grid-cols-2 gap-3 pb-3 border-b border-border">
+            {(['gemini','deepseek'] as const).map((p) => (
+              <div key={p} className="flex items-center gap-2">
+                <span className={cn(
+                  'inline-block w-2.5 h-2.5 rounded-full',
+                  connectionStatus[p] && 'bg-green-500',
+                  !connectionStatus[p] && 'bg-red-500'
+                )} />
+                <span className="text-sm">
+                  {p === 'gemini' ? 'Gemini AI Studio' : 'DeepSeek'}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {connectionStatus[p] ? 'Connected' : 'Not connected'}
+                  {connectionStatus.lastTested && (
+                    <span className="ml-1">
+                      ({new Date(connectionStatus.lastTested).toLocaleTimeString()})
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="space-y-4 py-4">
+        {/* Scrollable content area - Everything below status lights */}
+        <div className="flex-1 overflow-y-auto pr-2 space-y-3 py-3">
           {/* API Keys Section */}
           <CollapsibleSection
             title="API Keys"
@@ -392,9 +404,14 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               {/* Default Model */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium">
-                    Default Model
-                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="block text-sm font-medium">
+                      Default Model
+                    </label>
+                    <div title="Select your preferred models below. Removed models won't appear in dropdown menus.">
+                      <Info className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  </div>
                   <button
                     onClick={async () => {
                       setIsRefreshingModels(true)
@@ -404,6 +421,12 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                           deepseek: apiKeys.deepseek,
                         })
                         setDynamicModels(updatedModels)
+                        // Re-initialize preferences with new models
+                        const provider = modelSettings.defaultProvider
+                        const allModels = updatedModels[provider] || []
+                        if (allModels.length > 0) {
+                          allModels.forEach(model => addPreferredModel(provider, model))
+                        }
                       } catch (error) {
                         console.warn('Failed to refresh models:', error)
                       } finally {
@@ -425,15 +448,65 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                     )} />
                   </button>
                 </div>
-                <select
-                  value={modelSettings.defaultModel}
-                  onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+
+                {/* Current Default Model Selector */}
+                <div className="mb-3">
+                  <label className="block text-xs text-muted-foreground mb-1">
+                    Current Default Model
+                  </label>
+                  <select
+                    value={modelSettings.defaultModel}
+                    onChange={(e) => setModelSettings({ defaultModel: e.target.value })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                  >
+                    {availableModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Model Preferences */}
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-2">
+                    Manage Available Models (click × to remove)
+                  </label>
+                  <div className="max-h-32 overflow-y-auto border border-border rounded-lg p-2 space-y-1">
+                    {dynamicModels[modelSettings.defaultProvider]?.map((model) => {
+                      const isPreferred = userModelPreferences[modelSettings.defaultProvider]?.includes(model)
+                      return (
+                        <div key={model} className="flex items-center justify-between py-1 px-2 rounded text-sm hover:bg-accent/50">
+                          <span className={cn(
+                            'flex-1 truncate',
+                            isPreferred ? 'text-foreground' : 'text-muted-foreground'
+                          )}>
+                            {model}
+                          </span>
+                          <button
+                            onClick={() => {
+                              if (isPreferred) {
+                                removePreferredModel(modelSettings.defaultProvider, model)
+                              } else {
+                                addPreferredModel(modelSettings.defaultProvider, model)
+                              }
+                            }}
+                            className={cn(
+                              'ml-2 p-1 rounded transition-colors',
+                              isPreferred
+                                ? 'hover:bg-destructive hover:text-destructive-foreground text-muted-foreground'
+                                : 'hover:bg-primary hover:text-primary-foreground text-muted-foreground'
+                            )}
+                            title={isPreferred ? 'Remove from available models' : 'Add to available models'}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only preferred models will appear in dropdown menus throughout the app.
+                  </p>
+                </div>
               </div>
 
               {/* Temperature */}
@@ -457,172 +530,192 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
               </div>
             </div>
           </CollapsibleSection>
-        </div>
 
-        {/* System Prompts Section */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">System Prompts</h3>
+          {/* System Prompts Section */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">System Prompts</h3>
 
-          <div className="space-y-4">
-            {/* Prompt Optimizer Category */}
-            <CollapsibleSection
-              title="Prompt Optimizer"
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              }
-              defaultExpanded={false}
-            >
-              <div className="space-y-4 pl-6">
-                {/* Improver Prompt */}
-                <div className="border-l-2 border-primary/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-primary">
-                      Improver Prompt
-                    </label>
-                    <button
-                      onClick={() => restoreDefaultPrompt('improver')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+            <div className="space-y-4">
+              {/* Prompt Optimizer Category */}
+              <CollapsibleSection
+                title="Prompt Optimizer"
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                }
+                defaultExpanded={false}
+              >
+                <div className="space-y-4 pl-6">
+                  {/* Improver Prompt */}
+                  <div className="border-l-2 border-primary/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-primary">
+                        Improver Prompt
+                      </label>
+                      <button
+                        onClick={() => restoreDefaultPrompt('improver')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.improver}
+                      onChange={(e) => setSystemPrompt('improver', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                      placeholder="Enter Improver system prompt"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.improver}
-                    onChange={(e) => setSystemPrompt('improver', e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                    placeholder="Enter Improver system prompt"
-                  />
-                </div>
 
-                {/* Critic Prompt */}
-                <div className="border-l-2 border-primary/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-primary">
-                      Critic Prompt
-                    </label>
-                    <button
-                      onClick={() => restoreDefaultPrompt('critic')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+                  {/* Critic Prompt */}
+                  <div className="border-l-2 border-primary/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-primary">
+                        Critic Prompt
+                      </label>
+                      <button
+                        onClick={() => restoreDefaultPrompt('critic')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.critic}
+                      onChange={(e) => setSystemPrompt('critic', e.target.value)}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+                      placeholder="Enter Critic system prompt"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.critic}
-                    onChange={(e) => setSystemPrompt('critic', e.target.value)}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
-                    placeholder="Enter Critic system prompt"
-                  />
                 </div>
-              </div>
-            </CollapsibleSection>
+              </CollapsibleSection>
 
-            {/* Chat Category */}
-            <CollapsibleSection
-              title="Chat"
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              }
-              defaultExpanded={false}
-            >
-              <div className="space-y-4 pl-6">
-                {/* Chat System Prompt */}
-                <div className="border-l-2 border-green-500/20 pl-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-green-600">
-                      Chat System Prompt
-                    </label>
-                    <button
-                      onClick={() => setSystemPrompt('chat', '請輸出繁體中文')}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Restore Default
-                    </button>
+              {/* Chat Category */}
+              <CollapsibleSection
+                title="Chat"
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                }
+                defaultExpanded={false}
+              >
+                <div className="space-y-4 pl-6">
+                  {/* Chat System Prompt */}
+                  <div className="border-l-2 border-green-500/20 pl-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-green-600">
+                        Chat System Prompt
+                      </label>
+                      <button
+                        onClick={() => setSystemPrompt('chat', '請輸出繁體中文回覆')}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Restore Default
+                      </button>
+                    </div>
+                    <textarea
+                      value={systemPrompts.chat || '請輸出繁體中文回覆'}
+                      onChange={(e) => setSystemPrompt('chat', e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
+                      placeholder="請輸出繁體中文回覆"
+                    />
                   </div>
-                  <textarea
-                    value={systemPrompts.chat || '請輸出繁體中文'}
-                    onChange={(e) => setSystemPrompt('chat', e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 font-mono text-sm"
-                    placeholder="請輸出繁體中文"
-                  />
                 </div>
-              </div>
-            </CollapsibleSection>
-          </div>
-        </div>
-
-        {/* Feature Toggles */}
-        <div>
-          <h3 className="text-lg font-semibold mb-4">Features</h3>
-          
-          <div className="space-y-3">
-            {/* Show Token Usage */}
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Show Token Usage
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Display token counts in chat interface
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={features.showTokenUsage}
-                  onChange={(e) => setFeature('showTokenUsage', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-
-            {/* Enable Gemini Cache */}
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Enable Gemini Cache
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Use caching to reduce API costs (Gemini only)
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={features.enableGeminiCache}
-                  onChange={(e) => setFeature('enableGeminiCache', e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
+              </CollapsibleSection>
             </div>
           </div>
-        </div>
 
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-border">
-          <button
-            onClick={() => onOpenChange(false)}
-            className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
-          >
-            Cancel
-          </button>
-          
-          <button
-            onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
-          >
-            <Save className="w-4 h-4" />
-            Save Settings
-          </button>
+          {/* Feature Toggles */}
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Features</h3>
+
+            <div className="space-y-3">
+              {/* Show Token Usage */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Show Token Usage
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Display token counts in chat interface
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={features.showTokenUsage}
+                    onChange={(e) => setFeature('showTokenUsage', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              {/* Enable Gemini Cache */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Enable Gemini Cache
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Use caching to reduce API costs (Gemini only)
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={features.enableGeminiCache}
+                    onChange={(e) => setFeature('enableGeminiCache', e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/25 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Footer Actions - Inside scrollable area */}
+            <div className="flex justify-between items-center pt-4 border-t border-border">
+              <button
+                onClick={handleManualSync}
+                disabled={isSyncing}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 border border-border rounded-lg transition-colors',
+                  isSyncing
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:bg-accent'
+                )}
+                title="Sync data with server"
+              >
+                <Cloud className={cn(
+                  'w-4 h-4',
+                  isSyncing && 'animate-spin'
+                )} />
+                {isSyncing ? 'Syncing...' : 'Sync Data'}
+              </button>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => onOpenChange(false)}
+                  className="px-4 py-2 border border-border rounded-lg hover:bg-accent transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleSave}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  Save Settings
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
