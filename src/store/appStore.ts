@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { generateId } from '@/lib/utils'
+import { createAutoSyncScheduler } from '@/lib/autoSync'
+
+let scheduleAppStateSync: () => void = () => {}
 
 interface SyncResult {
   conflict?: boolean
@@ -78,6 +81,7 @@ interface AppState {
   // Tabs management
   tabs: Tab[]
   activeTab: string | null
+  stateVersion: number
 
   // Actions
   setActiveTab: (tabId: string) => void
@@ -132,6 +136,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       tabs: [],
       activeTab: null,
+      stateVersion: 0,
       chatStates: {},
       optimizerStates: {},
       aipkStates: {},
@@ -139,7 +144,10 @@ export const useAppStore = create<AppState>()(
       syncStatus: 'idle' as const,
       lastSyncAt: null,
 
-      setActiveTab: (tabId) => set({ activeTab: tabId }),
+      setActiveTab: (tabId) => {
+        set({ activeTab: tabId })
+        scheduleAppStateSync()
+      },
 
       createChatTab: () => {
         const tabId = generateId()
@@ -162,6 +170,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       createOptimizerTab: () => {
@@ -186,6 +196,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       createAIPKTab: () => {
@@ -224,6 +236,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       createFile2FileTab: () => {
@@ -251,12 +265,14 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       closeTab: (tabId) => {
         set((state) => {
           const newTabs = state.tabs.filter(tab => tab.id !== tabId)
-          const newActiveTab = state.activeTab === tabId 
+          const newActiveTab = state.activeTab === tabId
             ? newTabs[0]?.id || null
             : state.activeTab
 
@@ -281,6 +297,8 @@ export const useAppStore = create<AppState>()(
             file2fileStates: newFile2FileStates,
           }
         })
+
+        scheduleAppStateSync()
       },
 
       updateTabTitle: (tabId, title) => {
@@ -289,6 +307,8 @@ export const useAppStore = create<AppState>()(
             tab.id === tabId ? { ...tab, title, updatedAt: Date.now() } : tab
           ),
         }))
+
+        scheduleAppStateSync()
       },
 
       addChatMessage: (tabId, message) => {
@@ -307,6 +327,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
 
         // Update tab title based on first user message
         if (message.role === 'user' && message.content) {
@@ -333,6 +355,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setOptimizerInitialPrompt: (tabId, prompt) => {
@@ -345,6 +369,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       addOptimizerRound: (tabId, round) => {
@@ -357,6 +383,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setOptimizerBestResult: (tabId, result) => {
@@ -369,6 +397,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       resetOptimizerProgress: (tabId) => {
@@ -385,6 +415,8 @@ export const useAppStore = create<AppState>()(
             },
           }
         })
+
+        scheduleAppStateSync()
       },
 
       setAIPKPrompt: (tabId, prompt) => {
@@ -397,6 +429,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       addAIPKChat: (tabId, model, provider) => {
@@ -419,6 +453,8 @@ export const useAppStore = create<AppState>()(
           },
         }))
 
+        scheduleAppStateSync()
+
         return chatId
       },
 
@@ -432,15 +468,21 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       updateAIPKChatModel: (tabId, chatId, model, provider) => {
+        let updated = false
+
         set((state) => {
           const currentState = state.aipkStates[tabId]
           if (!currentState) {
             console.warn(`AIPK state not found for tab ${tabId}`)
             return state
           }
+
+          updated = true
 
           return {
             aipkStates: {
@@ -454,6 +496,10 @@ export const useAppStore = create<AppState>()(
             },
           }
         })
+
+        if (updated) {
+          scheduleAppStateSync()
+        }
       },
 
       addAIPKMessage: (tabId, chatId, message) => {
@@ -463,12 +509,16 @@ export const useAppStore = create<AppState>()(
           timestamp: Date.now(),
         }
 
+        let updated = false
+
         set((state) => {
           const currentState = state.aipkStates[tabId]
           if (!currentState) {
             console.warn(`AIPK state not found for tab ${tabId}`)
             return state
           }
+
+          updated = true
 
           return {
             aipkStates: {
@@ -485,16 +535,24 @@ export const useAppStore = create<AppState>()(
           }
         })
 
+        if (updated) {
+          scheduleAppStateSync()
+        }
+
         return newMessage.id
       },
 
       updateAIPKMessage: (tabId, chatId, messageId, content) => {
+        let updated = false
+
         set((state) => {
           const currentState = state.aipkStates[tabId]
           if (!currentState) {
             console.warn(`AIPK state not found for tab ${tabId}`)
             return state
           }
+
+          updated = true
 
           return {
             aipkStates: {
@@ -515,15 +573,23 @@ export const useAppStore = create<AppState>()(
             },
           }
         })
+
+        if (updated) {
+          scheduleAppStateSync()
+        }
       },
 
       setAIPKChatLoading: (tabId, chatId, isLoading) => {
+        let updated = false
+
         set((state) => {
           const currentState = state.aipkStates[tabId]
           if (!currentState) {
             console.warn(`AIPK state not found for tab ${tabId}`)
             return state
           }
+
+          updated = true
 
           return {
             aipkStates: {
@@ -537,6 +603,10 @@ export const useAppStore = create<AppState>()(
             },
           }
         })
+
+        if (updated) {
+          scheduleAppStateSync()
+        }
       },
 
       setFile2FileInputText: (tabId, inputText) => {
@@ -551,6 +621,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setFile2FileConverting: (tabId, isConverting) => {
@@ -563,6 +635,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setFile2FileDownloading: (tabId, isDownloading) => {
@@ -575,6 +649,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setFile2FileError: (tabId, error) => {
@@ -588,6 +664,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       setFile2FileSuccess: (tabId, success) => {
@@ -602,6 +680,8 @@ export const useAppStore = create<AppState>()(
             },
           },
         }))
+
+        scheduleAppStateSync()
       },
 
       // Sync functionality
@@ -610,6 +690,7 @@ export const useAppStore = create<AppState>()(
       resetState: () => set({
         tabs: [],
         activeTab: null,
+        stateVersion: 0,
         chatStates: {},
         optimizerStates: {},
         aipkStates: {},
@@ -636,7 +717,7 @@ export const useAppStore = create<AppState>()(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               state: appStateData,
-              clientVersion: currentState.lastSyncAt ? 1 : 0,
+              clientVersion: currentState.stateVersion || 0,
               forceOverwrite,
             }),
           })
@@ -653,12 +734,24 @@ export const useAppStore = create<AppState>()(
                 lastSyncAt: result.lastSyncAt,
               }
             }
+            if (response.status === 401) {
+              set({ syncStatus: 'idle' })
+              return undefined
+            }
             throw new Error(`App state sync failed: ${response.status} - ${result.message}`)
           }
 
+          const serverVersion = typeof result.version === 'number'
+            ? result.version
+            : currentState.stateVersion
+          const serverLastSync = result.lastSyncAt
+            ? new Date(result.lastSyncAt).getTime()
+            : Date.now()
+
           set({
             syncStatus: 'success',
-            lastSyncAt: Date.now()
+            lastSyncAt: serverLastSync,
+            stateVersion: serverVersion,
           })
 
           return result
@@ -680,16 +773,21 @@ export const useAppStore = create<AppState>()(
 
           const result = await response.json()
 
+          const serverVersion = typeof result.version === 'number' ? result.version : 0
+          const serverLastSync = result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now()
+
           if (result.state) {
             set({
               ...result.state,
               syncStatus: 'success',
-              lastSyncAt: result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now(),
+              lastSyncAt: serverLastSync,
+              stateVersion: serverVersion,
             })
           } else {
             set({
               syncStatus: 'success',
-              lastSyncAt: Date.now()
+              lastSyncAt: serverLastSync,
+              stateVersion: serverVersion,
             })
           }
 
@@ -708,12 +806,20 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         tabs: state.tabs,
         activeTab: state.activeTab,
+        stateVersion: state.stateVersion,
         chatStates: state.chatStates,
         optimizerStates: state.optimizerStates,
         aipkStates: state.aipkStates,
         file2fileStates: state.file2fileStates,
+        lastSyncAt: state.lastSyncAt,
         // 不持久化同步狀態
       }),
     }
   )
+)
+scheduleAppStateSync = createAutoSyncScheduler(
+  async () => {
+    await useAppStore.getState().syncToServer()
+  },
+  { taskName: 'app-state-sync' }
 )
