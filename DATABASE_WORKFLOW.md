@@ -341,8 +341,9 @@ npm run build:test         # 建置測試
 DATABASE_URL="postgresql://user:pass@localhost:5432/chatbot_dev"
 DIRECT_URL="postgresql://user:pass@localhost:5432/chatbot_dev"
 AUTH_SECRET="your-dev-secret"
-GOOGLE_GEMINI_API_KEY="your-key"
 ```
+
+> 💡 AI 相關的第三方 API Key 需於使用者登入後，在前端 Settings → API Keys 介面輸入，系統會在後端加密保存並與帳號綁定。
 
 ### 故障排除
 ```bash

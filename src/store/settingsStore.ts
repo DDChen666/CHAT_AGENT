@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { initializeSync, resetSync } from '@/lib/syncManager'
 
 interface SyncResult {
   conflict?: boolean
@@ -50,6 +49,7 @@ interface SettingsState extends Settings {
   testConnections: () => Promise<void>
   setConnectionStatus: (provider: 'gemini' | 'deepseek', status: boolean) => void
   resetToDefaults: () => void
+  clearSensitiveData: () => void
   // User model preferences
   addPreferredModel: (provider: 'gemini' | 'deepseek', model: string) => void
   removePreferredModel: (provider: 'gemini' | 'deepseek', model: string) => void
@@ -202,6 +202,17 @@ export const useSettingsStore = create<SettingsState>()(
 
       resetToDefaults: () => set(defaultSettings),
 
+      clearSensitiveData: () => set(() => ({
+        apiKeys: { gemini: '', deepseek: '' },
+        connectionStatus: {
+          gemini: false,
+          deepseek: false,
+          lastTested: 0,
+        },
+        lastSyncAt: null,
+        syncStatus: 'idle',
+      })),
+
       // User model preferences methods
       addPreferredModel: (provider, model) => {
         set((state) => ({
@@ -313,7 +324,6 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'synapse-settings',
       // 排除同步狀態不持久化，只保留設定資料
       partialize: (state) => ({
-        apiKeys: state.apiKeys,
         modelSettings: state.modelSettings,
         systemPrompts: state.systemPrompts,
         features: state.features,

@@ -17,13 +17,8 @@ AUTH_SECRET="請填入您的開發環境密鑰，至少32個字元"
 
 # 🤖 AI API 金鑰設定
 # -----------------------------------------------------------------------------
-# 🔴 必須: Google Gemini API 金鑰 (用於聊天功能)
-# 獲取方式: https://makersuite.google.com/app/apikey
-GOOGLE_GEMINI_API_KEY="請填入您的 Google Gemini API 金鑰"
-
-# 🔵 選用: DeepSeek API 金鑰 (可選備用 AI 服務)
-# 獲取方式: https://platform.deepseek.com/
-DEEPSEEK_API_KEY="請填入您的 DeepSeek API 金鑰（可選）"
+# ❗ 注意：AI 供應商的金鑰將在使用者登入後，於「Settings」畫面中輸入並安全保存。
+#        這裡不再透過環境變數設定任何第三方 API Key，避免意外外洩。
 
 # =============================================================================
 # 📋 填寫步驟:
@@ -47,4 +42,4 @@ DEEPSEEK_API_KEY="請填入您的 DeepSeek API 金鑰（可選）"
 # DATABASE_URL: 您的生產 PostgreSQL 連線字串
 # DIRECT_URL: 您的生產 PostgreSQL 直接連線字串
 # AUTH_SECRET: 生產環境的認證金鑰
-# GOOGLE_GEMINI_API_KEY: 生產環境的 Gemini API 金鑰
+# 其他 AI API Key 請於部署後登入後台，在 Settings 頁面設定
