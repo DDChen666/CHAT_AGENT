@@ -61,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
 
           return { success: true }
         } catch (error) {
+          console.error('Login request failed:', error)
           set({ isLoading: false })
           return { success: false, message: 'Network error' }
         }
@@ -91,6 +92,7 @@ export const useAuthStore = create<AuthState>()(
 
           return { success: true }
         } catch (error) {
+          console.error('Registration request failed:', error)
           set({ isLoading: false })
           return { success: false, message: 'Network error' }
         }

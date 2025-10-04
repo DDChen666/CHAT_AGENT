@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import AnimatedButton, { SmoothButton, RippleButton, PressButton, PulseButton } from './AnimatedButton'
+import { SmoothButton, RippleButton, PressButton, PulseButton } from './AnimatedButton'
 
 export default function AnimationDemo() {
   const [message, setMessage] = useState('')
