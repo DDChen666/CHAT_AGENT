@@ -75,7 +75,14 @@ export function ModelSettingsSection({
               <label className="block text-sm font-medium" htmlFor="default-model">
                 Default Model
               </label>
-              <Info className="h-4 w-4 text-muted-foreground" aria-hidden title="Select your preferred models below. Removed models won't appear in dropdown menus." />
+              <span
+                className="relative flex h-4 w-4 items-center justify-center text-muted-foreground"
+                role="img"
+                aria-label="Select your preferred models below. Removed models won't appear in dropdown menus."
+                title="Select your preferred models below. Removed models won't appear in dropdown menus."
+              >
+                <Info className="h-4 w-4" aria-hidden />
+              </span>
             </div>
             <button
               type="button"
