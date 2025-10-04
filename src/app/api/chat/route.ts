@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       ? model.trim()
       : provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
 
-    // Resolve API key precedence: body > stored per-user > env
+    // Resolve API key precedence: request payload > stored per-user value
     let effectiveKey = (apiKey || '').trim()
     if (!effectiveKey) {
       const session = await getTokenPayloadFromCookies()

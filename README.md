@@ -178,12 +178,14 @@ public/
 - `DATABASE_URL`: PostgreSQL 連接字串
 - `DIRECT_URL`: 直接資料庫連接 (Prisma 用)
 - `AUTH_SECRET`: JWT 認證密鑰
-- `GOOGLE_GEMINI_API_KEY`: Gemini AI API 金鑰
-- `DEEPSEEK_API_KEY`: DeepSeek AI API 金鑰 (可選)
+
+> [!IMPORTANT]
+> 第三方 AI 供應商（例如 Google Gemini、DeepSeek）的 API Key **改由登入後的使用者在前端設定畫面輸入**，並以加密方式儲存在資料庫中。請勿再透過環境變數配置這些敏感金鑰，以降低外洩風險。
 
 ### 設定方式
 1. **本地開發**: 複製 `.env示範.examples` 為 `.env.local`
 2. **Vercel 部署**: 在 Vercel Dashboard 的 Environment Variables 中設定
+3. **AI API Key 綁定**: 使用者登入後，在應用程式的 Settings → API Keys 區段輸入金鑰，即可加密後保存於伺服端。
 
 ## 🚀 部署
 
