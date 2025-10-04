@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createAutoSyncScheduler } from '@/lib/autoSync'
+
+let scheduleSettingsSync: () => void = () => {}
 
 interface SyncResult {
   conflict?: boolean
@@ -42,6 +45,7 @@ export interface Settings {
 }
 
 interface SettingsState extends Settings {
+  settingsVersion: number
   setApiKey: (provider: keyof Settings['apiKeys'], key: string) => void
   setModelSettings: (settings: Partial<Settings['modelSettings']>) => void
   setSystemPrompt: (type: keyof Settings['systemPrompts'], prompt: string) => void
@@ -133,26 +137,35 @@ export const useSettingsStore = create<SettingsState>()(
       ...defaultSettings,
       syncStatus: 'idle' as const,
       lastSyncAt: null,
+      settingsVersion: 0,
 
-      setApiKey: (provider, key) =>
+      setApiKey: (provider, key) => {
         set((state) => ({
           apiKeys: { ...state.apiKeys, [provider]: key },
-        })),
+        }))
+        scheduleSettingsSync()
+      },
 
-      setModelSettings: (settings) =>
+      setModelSettings: (settings) => {
         set((state) => ({
           modelSettings: { ...state.modelSettings, ...settings },
-        })),
+        }))
+        scheduleSettingsSync()
+      },
 
-      setSystemPrompt: (type, prompt) =>
+      setSystemPrompt: (type, prompt) => {
         set((state) => ({
           systemPrompts: { ...state.systemPrompts, [type]: prompt },
-        })),
+        }))
+        scheduleSettingsSync()
+      },
 
-      setFeature: (feature, enabled) =>
+      setFeature: (feature, enabled) => {
         set((state) => ({
           features: { ...state.features, [feature]: enabled },
-        })),
+        }))
+        scheduleSettingsSync()
+      },
 
       testConnections: async () => {
         const currentState = get()
@@ -188,6 +201,8 @@ export const useSettingsStore = create<SettingsState>()(
         set(() => ({
           connectionStatus: updatedStatus,
         }))
+
+        scheduleSettingsSync()
       },
 
       setConnectionStatus: (provider, status) => {
@@ -198,9 +213,14 @@ export const useSettingsStore = create<SettingsState>()(
             lastTested: Date.now(),
           },
         }))
+
+        scheduleSettingsSync()
       },
 
-      resetToDefaults: () => set(defaultSettings),
+      resetToDefaults: () => {
+        set(defaultSettings)
+        scheduleSettingsSync()
+      },
 
       clearSensitiveData: () => set(() => ({
         apiKeys: { gemini: '', deepseek: '' },
@@ -221,6 +241,8 @@ export const useSettingsStore = create<SettingsState>()(
             [provider]: [...new Set([...state.userModelPreferences[provider], model])],
           },
         }))
+
+        scheduleSettingsSync()
       },
 
       removePreferredModel: (provider, model) => {
@@ -230,6 +252,8 @@ export const useSettingsStore = create<SettingsState>()(
             [provider]: state.userModelPreferences[provider].filter(m => m !== model),
           },
         }))
+
+        scheduleSettingsSync()
       },
 
       // Sync functionality
@@ -254,7 +278,7 @@ export const useSettingsStore = create<SettingsState>()(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               settings: settingsData,
-              clientVersion: currentState.lastSyncAt ? 1 : 0,
+              clientVersion: currentState.settingsVersion || 0,
               forceOverwrite,
             }),
           })
@@ -271,12 +295,24 @@ export const useSettingsStore = create<SettingsState>()(
                 lastSyncAt: result.lastSyncAt,
               }
             }
+            if (response.status === 401) {
+              set({ syncStatus: 'idle' })
+              return undefined
+            }
             throw new Error(`Sync failed: ${response.status} - ${result.message}`)
           }
 
+          const serverVersion = typeof result.version === 'number'
+            ? result.version
+            : currentState.settingsVersion
+          const serverLastSync = result.lastSyncAt
+            ? new Date(result.lastSyncAt).getTime()
+            : Date.now()
+
           set({
             syncStatus: 'success',
-            lastSyncAt: Date.now()
+            lastSyncAt: serverLastSync,
+            settingsVersion: serverVersion,
           })
 
           return result
@@ -298,16 +334,21 @@ export const useSettingsStore = create<SettingsState>()(
 
           const result = await response.json()
 
+          const serverVersion = typeof result.version === 'number' ? result.version : 0
+          const serverLastSync = result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now()
+
           if (result.settings) {
             set({
               ...result.settings,
               syncStatus: 'success',
-              lastSyncAt: result.lastSyncAt ? new Date(result.lastSyncAt).getTime() : Date.now(),
+              lastSyncAt: serverLastSync,
+              settingsVersion: serverVersion,
             })
           } else {
             set({
               syncStatus: 'success',
-              lastSyncAt: Date.now()
+              lastSyncAt: serverLastSync,
+              settingsVersion: serverVersion,
             })
           }
 
@@ -329,8 +370,17 @@ export const useSettingsStore = create<SettingsState>()(
         features: state.features,
         connectionStatus: state.connectionStatus,
         userModelPreferences: state.userModelPreferences,
+        settingsVersion: state.settingsVersion,
+        lastSyncAt: state.lastSyncAt,
         // 不持久化同步狀態
       }),
     }
   )
+)
+
+scheduleSettingsSync = createAutoSyncScheduler(
+  async () => {
+    await useSettingsStore.getState().syncToServer()
+  },
+  { taskName: 'settings-sync' }
 )
