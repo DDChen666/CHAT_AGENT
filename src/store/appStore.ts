@@ -124,6 +124,7 @@ interface AppState {
   syncStatus: 'idle' | 'syncing' | 'success' | 'error'
   lastSyncAt: number | null
   setSyncStatus: (status: AppState['syncStatus']) => void
+  resetState: () => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -605,6 +606,17 @@ export const useAppStore = create<AppState>()(
 
       // Sync functionality
       setSyncStatus: (syncStatus) => set({ syncStatus }),
+
+      resetState: () => set({
+        tabs: [],
+        activeTab: null,
+        chatStates: {},
+        optimizerStates: {},
+        aipkStates: {},
+        file2fileStates: {},
+        syncStatus: 'idle',
+        lastSyncAt: null,
+      }),
 
       syncToServer: async (forceOverwrite = false) => {
         try {

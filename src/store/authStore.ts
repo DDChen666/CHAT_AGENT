@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { initializeSync, resetSync } from '@/lib/syncManager'
+import { useSettingsStore } from '@/store/settingsStore'
+import { useAppStore } from '@/store/appStore'
 
 interface User {
   id: string
@@ -59,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
 
           return { success: true }
         } catch (error) {
+          console.error('Login request failed:', error)
           set({ isLoading: false })
           return { success: false, message: 'Network error' }
         }
@@ -89,6 +92,7 @@ export const useAuthStore = create<AuthState>()(
 
           return { success: true }
         } catch (error) {
+          console.error('Registration request failed:', error)
           set({ isLoading: false })
           return { success: false, message: 'Network error' }
         }
@@ -97,16 +101,18 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         set({ isLoading: true })
         try {
-          // 先同步数据到服务器
           await resetSync()
-
-          // 然后执行登出
-          await fetch('/api/auth/logout', { method: 'POST' })
-          set({ user: null, isLoading: false })
         } catch (error) {
-          console.error('Logout error:', error)
-          // 即使同步失败也要继续登出流程
+          console.warn('Failed to sync data before logout:', error)
+        }
+
+        try {
           await fetch('/api/auth/logout', { method: 'POST' })
+        } catch (error) {
+          console.error('Logout request error:', error)
+        } finally {
+          useSettingsStore.getState().clearSensitiveData()
+          useAppStore.getState().resetState()
           set({ user: null, isLoading: false })
         }
       },

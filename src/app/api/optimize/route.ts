@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       systemPrompts?.critic
     )
     
-    // Resolve API key (body > saved per-user)
+    // Resolve API key (request payload > saved per-user value)
     let effectiveKey = (apiKey || '').trim()
     if (!effectiveKey) {
       const session = await getTokenPayloadFromCookies()

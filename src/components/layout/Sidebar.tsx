@@ -1,17 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { MessageSquare, Settings, Sparkles, Plus, ChevronLeft } from 'lucide-react'
+import { MessageSquare, Settings, Sparkles, Plus, ChevronLeft, X } from 'lucide-react'
 import { useAppStore } from '@/store/appStore'
 import { cn } from '@/lib/utils'
-import SettingsModal from '../settings/SettingsModal'
 import Image from 'next/image'
 import AIPKIcon from '../ui/AIPKIcon'
 import FileToFileIcon from '../ui/FileToFileIcon'
 
-export default function Sidebar() {
+interface SidebarProps {
+  onOpenSettings: () => void
+  variant?: 'desktop' | 'mobile'
+  onCloseMobile?: () => void
+}
+
+export default function Sidebar({ onOpenSettings, variant = 'desktop', onCloseMobile }: SidebarProps) {
   const { tabs, activeTab, setActiveTab, closeTab, createChatTab, createOptimizerTab, createAIPKTab, createFile2FileTab } = useAppStore()
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   const handleNewChat = () => {
@@ -34,7 +38,27 @@ export default function Sidebar() {
     setIsCollapsed(!isCollapsed)
   }
 
-  if (isCollapsed) {
+  const handleSettingsClick = () => {
+    onOpenSettings()
+    if (variant === 'mobile' && onCloseMobile) {
+      onCloseMobile()
+    }
+  }
+
+  const handleTabSelection = (tabId: string) => {
+    setActiveTab(tabId)
+    if (variant === 'mobile' && onCloseMobile) {
+      onCloseMobile()
+    }
+  }
+
+  const maybeCloseMobile = () => {
+    if (variant === 'mobile' && onCloseMobile) {
+      onCloseMobile()
+    }
+  }
+
+  if (isCollapsed && variant === 'desktop') {
     return (
       <div className="w-16 bg-sidebar border-r border-border h-full flex flex-col">
         {/* Collapsed Header */}
@@ -43,6 +67,7 @@ export default function Sidebar() {
             onClick={toggleSidebar}
             className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
             title="Expand Sidebar"
+            aria-label="Expand sidebar"
           >
             <Image
               src="/logo_optimized.png"
@@ -60,6 +85,7 @@ export default function Sidebar() {
             onClick={handleNewChat}
             className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
             title="New Chat"
+            aria-label="Start new chat"
           >
             <Plus className="w-5 h-5" />
           </button>
@@ -67,6 +93,7 @@ export default function Sidebar() {
             onClick={handleNewOptimizer}
             className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
             title="New Optimizer"
+            aria-label="Open prompt optimizer"
           >
             <Sparkles className="w-5 h-5" />
           </button>
@@ -74,6 +101,7 @@ export default function Sidebar() {
             onClick={handleNewAIPK}
             className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
             title="New AI PK"
+            aria-label="Create AI PK session"
           >
             <AIPKIcon className="w-5 h-5" />
           </button>
@@ -81,6 +109,7 @@ export default function Sidebar() {
             onClick={handleNewFile2File}
             className="w-full flex justify-center p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
             title="New File to File"
+            aria-label="Start file to file conversion"
           >
             <FileToFileIcon className="w-5 h-5" />
           </button>
@@ -90,7 +119,10 @@ export default function Sidebar() {
   }
 
   return (
-    <div className="w-64 bg-sidebar border-r border-border h-full flex flex-col">
+    <div className={cn(
+      'bg-sidebar border-border h-full flex flex-col',
+      variant === 'mobile' ? 'w-64 border-r shadow-lg' : 'w-64 border-r'
+    )}>
       {/* Header */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between">
@@ -101,13 +133,28 @@ export default function Sidebar() {
             height={32}
             className="rounded"
           />
-          <button
-            onClick={toggleSidebar}
-            className="p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
-            title="Collapse Sidebar"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {variant === 'mobile' ? (
+              <button
+                onClick={() => {
+                  maybeCloseMobile()
+                }}
+                className="p-2 hover:bg-accent rounded-md transition-colors"
+                aria-label="Close menu"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                onClick={toggleSidebar}
+                className="p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+                title="Collapse Sidebar"
+                aria-label="Collapse sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -117,6 +164,7 @@ export default function Sidebar() {
           onClick={handleNewChat}
           className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
           title="New Chat"
+          aria-label="Start new chat"
         >
           <Plus className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">新聊天</span>
@@ -125,6 +173,7 @@ export default function Sidebar() {
           onClick={handleNewOptimizer}
           className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
           title="New Optimizer"
+          aria-label="Open prompt optimizer"
         >
           <Sparkles className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">Prompt Optimizer</span>
@@ -133,6 +182,7 @@ export default function Sidebar() {
           onClick={handleNewAIPK}
           className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
           title="New AI PK"
+          aria-label="Create AI PK session"
         >
           <AIPKIcon className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">AI PK</span>
@@ -141,6 +191,7 @@ export default function Sidebar() {
           onClick={handleNewFile2File}
           className="flex items-center gap-3 w-full p-3 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
           title="New File to File"
+          aria-label="Start file to file conversion"
         >
           <FileToFileIcon className="w-4 h-4 flex-shrink-0" />
           <span className="text-sm">File to File</span>
@@ -162,7 +213,7 @@ export default function Sidebar() {
                   ? 'bg-primary text-primary-foreground'
                   : 'hover:bg-accent'
               )}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabSelection(tab.id)}
             >
               {tab.type === 'chat' ? (
                 <MessageSquare className="w-4 h-4 flex-shrink-0" />
@@ -180,8 +231,12 @@ export default function Sidebar() {
                 onClick={(e) => {
                   e.stopPropagation()
                   closeTab(tab.id)
+                  if (variant === 'mobile' && onCloseMobile) {
+                    onCloseMobile()
+                  }
                 }}
                 className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive rounded transition-all duration-200 btn-smooth"
+                aria-label={`Close ${tab.title}`}
               >
                 <Plus className="w-3 h-3 rotate-45" />
               </button>
@@ -193,17 +248,13 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="p-4 border-t border-border">
         <button
-          onClick={() => setSettingsOpen(true)}
+          onClick={handleSettingsClick}
           className="flex items-center gap-3 w-full p-2 hover:bg-accent rounded-md transition-all duration-200 btn-smooth"
+          aria-label="Open settings"
         >
           <Settings className="w-4 h-4" />
           <span className="text-sm">Settings</span>
         </button>
-        
-        <SettingsModal 
-          open={settingsOpen} 
-          onOpenChange={setSettingsOpen} 
-        />
       </div>
     </div>
   )
