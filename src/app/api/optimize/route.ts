@@ -102,14 +102,25 @@ ${feedbackSection}
 
     const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
     const temperature = typeof options?.temperature === 'number' ? options.temperature : 0.3
-    const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 1024
+    const maxTokens =
+      typeof options?.maxTokens === 'number' && options.maxTokens > 0
+        ? Math.floor(options.maxTokens)
+        : undefined
+
+    const callConfig: { temperature?: number; maxTokens?: number } = {}
+    if (Number.isFinite(temperature)) {
+      callConfig.temperature = temperature
+    }
+    if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
+      callConfig.maxTokens = maxTokens
+    }
 
     const text = (await callProvider(
       provider as ProviderName,
       model,
       messages,
       apiKey || '',
-      { temperature, maxTokens }
+      callConfig
     ))?.trim()
 
     if (!text) {
@@ -148,14 +159,22 @@ ${prompt}
     ]
 
     const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
-    const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 512
+    const maxTokens =
+      typeof options?.maxTokens === 'number' && options.maxTokens > 0
+        ? Math.floor(Math.min(options.maxTokens, 800))
+        : undefined
+
+    const callConfig: { temperature?: number; maxTokens?: number } = { temperature: 0 }
+    if (typeof maxTokens === 'number' && Number.isFinite(maxTokens)) {
+      callConfig.maxTokens = maxTokens
+    }
 
     const jsonResponse = await callProvider(
       provider as ProviderName,
       model,
       messages,
       apiKey || '',
-      { temperature: 0, maxTokens }
+      callConfig
     )
 
     const text = (jsonResponse || '').trim()
@@ -253,7 +272,7 @@ export async function POST(request: NextRequest) {
         : 'deepseek-chat'
 
     const effectiveTemperature = typeof temperature === 'number' ? temperature : 0.3
-    const effectiveMaxTokens = typeof maxTokens === 'number' ? maxTokens : 1024
+    const userMaxTokens = typeof maxTokens === 'number' && maxTokens > 0 ? Math.floor(maxTokens) : undefined
 
     const stream = new ReadableStream({
       async start(controller) {
@@ -270,7 +289,11 @@ export async function POST(request: NextRequest) {
               previousFeedback,
               provider,
               effectiveKey,
-              { model: chosenModel, temperature: effectiveTemperature, maxTokens: effectiveMaxTokens }
+              {
+                model: chosenModel,
+                temperature: effectiveTemperature,
+                ...(typeof userMaxTokens === 'number' ? { maxTokens: userMaxTokens } : {}),
+              }
             )
 
             const review = await optimizer.generateReviewScores(
@@ -278,7 +301,12 @@ export async function POST(request: NextRequest) {
               improvedPrompt,
               provider,
               effectiveKey,
-              { model: chosenModel, maxTokens: Math.min(effectiveMaxTokens, 800) }
+              {
+                model: chosenModel,
+                ...(typeof userMaxTokens === 'number'
+                  ? { maxTokens: Math.max(1, Math.min(userMaxTokens, 800)) }
+                  : {}),
+              }
             )
 
             const totalScore = review.total
