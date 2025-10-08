@@ -64,7 +64,12 @@ class OptimizerClient {
     currentPrompt: string,
     previousFeedback: string[],
     provider: string,
-    apiKey?: string
+    apiKey: string | undefined,
+    options?: {
+      model?: string
+      temperature?: number
+      maxTokens?: number
+    }
   ) {
     try {
       const sanitizedInitial = initialPrompt.trim()
@@ -89,8 +94,16 @@ ${sanitizedCurrent}
 ${feedbackSection}
 
 請依據上述資訊，輸出一份完全優化後且可直接使用的提示詞內容。輸出時請不要包含任何額外說明，只需提供最終提示詞。`
-      const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
-      const text = await callProvider(provider as ProviderName, model, [{ role: 'user', content: optimizationPrompt }], apiKey || '', { temperature: 0.3, maxTokens: 1024 })
+      const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
+      const temperature = typeof options?.temperature === 'number' ? options.temperature : 0.3
+      const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 1024
+      const text = await callProvider(
+        provider as ProviderName,
+        model,
+        [{ role: 'user', content: optimizationPrompt }],
+        apiKey || '',
+        { temperature, maxTokens }
+      )
       return text
     } catch (error) {
       console.error('Optimization API error:', error)
@@ -125,7 +138,16 @@ ${feedbackNotes}
 - 全程使用繁體中文回覆。`
   }
 
-  async generateReviewScores(initialPrompt: string, prompt: string, provider: string, apiKey?: string): Promise<ReviewAnalysis> {
+  async generateReviewScores(
+    initialPrompt: string,
+    prompt: string,
+    provider: string,
+    apiKey: string | undefined,
+    options?: {
+      model?: string
+      maxTokens?: number
+    }
+  ): Promise<ReviewAnalysis> {
     try {
       const reviewPrompt = `${this.criticPrompt}
 
@@ -140,8 +162,15 @@ ${prompt}
 """
 
 請只返回JSON格式的評分，不要添加任何其他內容。`
-      const model = provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat'
-      const jsonResponse = await callProvider(provider as ProviderName, model, [{ role: 'user', content: reviewPrompt }], apiKey || '', { temperature: 0 })
+      const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
+      const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 512
+      const jsonResponse = await callProvider(
+        provider as ProviderName,
+        model,
+        [{ role: 'user', content: reviewPrompt }],
+        apiKey || '',
+        { temperature: 0, maxTokens }
+      )
       const text = (jsonResponse || '').trim()
 
       // 嘗試解析JSON回應
@@ -212,7 +241,10 @@ export async function POST(request: NextRequest) {
       threshold = 90, 
       provider = 'gemini',
       apiKey,
-      systemPrompts
+      systemPrompts,
+      model,
+      temperature,
+      maxTokens,
     } = body
 
     const optimizer = new OptimizerClient(
@@ -246,6 +278,15 @@ export async function POST(request: NextRequest) {
     }
 
     const encoder = new TextEncoder()
+    const chosenModel = typeof model === 'string' && model.trim()
+      ? model.trim()
+      : provider === 'gemini'
+        ? 'gemini-2.5-flash'
+        : 'deepseek-chat'
+
+    const effectiveTemperature = typeof temperature === 'number' ? temperature : 0.3
+    const effectiveMaxTokens = typeof maxTokens === 'number' ? maxTokens : 1024
+
     const stream = new ReadableStream({
       async start(controller) {
         let bestScore = 0
@@ -255,10 +296,23 @@ export async function POST(request: NextRequest) {
 
         for (let round = 1; round <= iterations; round++) {
           // Use the optimizer to improve the prompt
-          const improvedPrompt = await optimizer.optimizePrompt(initialPrompt, currentPrompt, previousFeedback, provider, effectiveKey)
+          const improvedPrompt = await optimizer.optimizePrompt(
+            initialPrompt,
+            currentPrompt,
+            previousFeedback,
+            provider,
+            effectiveKey,
+            { model: chosenModel, temperature: effectiveTemperature, maxTokens: effectiveMaxTokens }
+          )
 
           // Generate review scores
-          const review = await optimizer.generateReviewScores(initialPrompt, improvedPrompt, provider, effectiveKey)
+          const review = await optimizer.generateReviewScores(
+            initialPrompt,
+            improvedPrompt,
+            provider,
+            effectiveKey,
+            { model: chosenModel, maxTokens: Math.min(effectiveMaxTokens, 800) }
+          )
 
           const totalScore = review.total
 

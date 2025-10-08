@@ -54,6 +54,8 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           provider,
           apiKey: selectedKey,
           systemPrompts,
+          model: modelSettings.defaultModel,
+          temperature: modelSettings.temperature,
         }),
       })
 
