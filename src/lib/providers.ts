@@ -91,7 +91,6 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
     { category: 'HARM_CATEGORY_SEXUAL', threshold: 'BLOCK_NONE' },
     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     { category: 'HARM_CATEGORY_VIOLENCE', threshold: 'BLOCK_NONE' },
-    { category: 'HARM_CATEGORY_SELF_HARM', threshold: 'BLOCK_NONE' },
   ]
 
   if (typeof cfg.temperature === 'number' || typeof cfg.maxTokens === 'number') {
