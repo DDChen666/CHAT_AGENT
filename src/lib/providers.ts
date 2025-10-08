@@ -56,13 +56,44 @@ export async function callProvider(
 async function callGemini(model: string, messages: ChatMessage[], apiKey: string, cfg: GenConfig) {
   if (!apiKey) throw new Error('Gemini API key missing')
 
-  // Map to Gemini contents with literal role types
-  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = messages.map((m): { role: 'user' | 'model'; parts: { text: string }[] } => ({
+  const systemMessages = messages.filter(m => m.role === 'system')
+  const nonSystemMessages = messages.filter(m => m.role !== 'system')
+
+  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = nonSystemMessages.map((m): { role: 'user' | 'model'; parts: { text: string }[] } => ({
     role: m.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: m.content }],
   }))
 
-  const body: { contents: { role: 'user' | 'model'; parts: { text: string }[] }[]; generationConfig?: { temperature?: number; maxOutputTokens?: number } } = { contents }
+  if (!contents.length) {
+    throw new Error('Gemini payload missing user messages')
+  }
+
+  const body: {
+    contents: { role: 'user' | 'model'; parts: { text: string }[] }[]
+    systemInstruction?: { role: 'system'; parts: { text: string }[] }
+    safetySettings?: { category: string; threshold: string }[]
+    generationConfig?: { temperature?: number; maxOutputTokens?: number }
+  } = { contents }
+
+  if (systemMessages.length) {
+    const mergedSystemPrompt = systemMessages.map(m => m.content).join('\n\n')
+    if (mergedSystemPrompt.trim()) {
+      body.systemInstruction = {
+        role: 'system',
+        parts: [{ text: mergedSystemPrompt }],
+      }
+    }
+  }
+
+  body.safetySettings = [
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SEXUAL', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_VIOLENCE', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SELF_HARM', threshold: 'BLOCK_NONE' },
+  ]
+
   if (typeof cfg.temperature === 'number' || typeof cfg.maxTokens === 'number') {
     body.generationConfig = {}
     if (typeof cfg.temperature === 'number') body.generationConfig.temperature = cfg.temperature
@@ -84,9 +115,23 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
     throw new Error(msg)
   }
   const data = await res.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned empty response')
-  return text
+
+  const firstCandidate = data.candidates?.[0]
+  const parts: unknown = firstCandidate?.content?.parts
+  const textParts = Array.isArray(parts)
+    ? (parts as { text?: string }[])
+        .map(part => (typeof part?.text === 'string' ? part.text : ''))
+        .filter(Boolean)
+    : []
+  const text = textParts.join('\n').trim()
+
+  if (text) {
+    return text
+  }
+
+  const finishReason = firstCandidate?.finishReason || data.promptFeedback?.blockReason
+  const reasonText = typeof finishReason === 'string' ? finishReason : 'Gemini returned empty response'
+  throw new Error(reasonText === 'SAFETY' ? 'Gemini blocked the response due to safety settings' : String(reasonText))
 }
 
 async function callDeepSeek(model: string, messages: ChatMessage[], apiKey: string, cfg: GenConfig) {

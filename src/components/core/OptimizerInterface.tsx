@@ -14,7 +14,7 @@ interface OptimizerInterfaceProps {
 
 export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
   const { optimizerStates, setOptimizerInitialPrompt, addOptimizerRound, setOptimizerBestResult, resetOptimizerProgress } = useAppStore()
-  const { modelSettings, apiKeys, systemPrompts } = useSettingsStore()
+  const { modelSettings, apiKeys } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [currentRound, setCurrentRound] = useState(0)
@@ -53,7 +53,8 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           threshold: 90,
           provider,
           apiKey: selectedKey,
-          systemPrompts,
+          model: modelSettings.defaultModel,
+          temperature: modelSettings.temperature,
         }),
       })
 
@@ -81,6 +82,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
       const decoder = new TextDecoder()
 
       if (reader) {
+        let encounteredError = false
         try {
           while (true) {
             const { done, value } = await reader.read()
@@ -90,38 +92,45 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
             const lines = chunk.split('\n')
 
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const data = JSON.parse(line.slice(6))
-                  
-                  if (data.round) {
-                    // Update current round
-                    setCurrentRound(data.round)
-                    
-                    // Add round data to store
-                    addOptimizerRound(tabId, data)
-                    
-                    // Update best result if available
-                    if (data.bestSoFar) {
-                      setOptimizerBestResult(tabId, {
-                        prompt: data.bestSoFar.prompt,
-                        score: data.bestSoFar.score,
-                      })
-                    }
-                  }
-                  
-                  if (data.type === 'final') {
-                    // Final result
-                    setOptimizerBestResult(tabId, {
-                      prompt: data.prompt,
-                      score: data.score,
-                    })
-                    setIsOptimizing(false)
-                  }
-                } catch (e) {
-                  console.error('Error parsing SSE data:', e)
+              if (!line.startsWith('data: ')) continue
+
+              try {
+                const data = JSON.parse(line.slice(6))
+
+                if (data.type === 'error') {
+                  setIsOptimizing(false)
+                  setCurrentRound((prev) => (prev > 0 ? prev : data.round ?? 0))
+                  toast.error(data.message || 'Optimizer pipeline failed')
+                  encounteredError = true
+                  break
                 }
+
+                if (data.round) {
+                  setCurrentRound(data.round)
+                  addOptimizerRound(tabId, data)
+
+                  if (data.bestSoFar) {
+                    setOptimizerBestResult(tabId, {
+                      prompt: data.bestSoFar.prompt,
+                      score: data.bestSoFar.score,
+                    })
+                  }
+                }
+
+                if (data.type === 'final') {
+                  setOptimizerBestResult(tabId, {
+                    prompt: data.prompt,
+                    score: data.score,
+                  })
+                  setIsOptimizing(false)
+                }
+              } catch (e) {
+                console.error('Error parsing SSE data:', e)
               }
+            }
+
+            if (encounteredError) {
+              break
             }
           }
         } finally {
