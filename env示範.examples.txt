@@ -5,29 +5,16 @@
 # 📍 資料庫設定 (本地 Docker PostgreSQL)
 # -----------------------------------------------------------------------------
 # 我們已經啟動了 Docker PostgreSQL 容器，請使用以下設定：
-DATABASE_URL="postgresql://postgres:mypassword@localhost:5432/postgres"
-DIRECT_URL="postgresql://postgres:mypassword@localhost:5432/postgres"
+DATABASE_URL="postgresql://postgres:......"
+VERCEL_POSTGRES_PRISMA_DATABASE_URL="postgresql://postgres:......"
+DIRECT_URL="postgresql://postgres:......"
 
 # 🔐 認證金鑰 (用於 JWT 加密)
 # -----------------------------------------------------------------------------
 # 請生成一個強隨機字串作為金鑰，例如：
 # - 使用: openssl rand -base64 32
 # - 或使用: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-AUTH_SECRET="請填入您的開發環境密鑰，至少32個字元"
-
-# 🤖 AI API 金鑰設定
-# -----------------------------------------------------------------------------
-# ❗ 注意：AI 供應商的金鑰將在使用者登入後，於「Settings」畫面中輸入並安全保存。
-#        這裡不再透過環境變數設定任何第三方 API Key，避免意外外洩。
-
-# =============================================================================
-# 📋 填寫步驟:
-# =============================================================================
-# 1. 複製此檔案: cp .env示範.examples .env.local
-# 2. 編輯 .env.local 檔案
-# 3. 填入您的 API 金鑰
-# 4. 儲存檔案
-# 5. 千萬不要將 .env.local 提交到 Git！
+AUTH_SECRET="test-development-secret-key-for-testing-purposes-only-32-chars-minimum"
 
 # =============================================================================
 # 🔍 測試設定是否正確:
@@ -40,6 +27,7 @@ AUTH_SECRET="請填入您的開發環境密鑰，至少32個字元"
 # =============================================================================
 # 在 Vercel 控制台中設定相同的環境變數
 # DATABASE_URL: 您的生產 PostgreSQL 連線字串
+# VERCEL_POSTGRES_PRISMA_DATABASE_URL: 您的生產 PostgreSQL 連線字串
 # DIRECT_URL: 您的生產 PostgreSQL 直接連線字串
 # AUTH_SECRET: 生產環境的認證金鑰
-# 其他 AI API Key 請於部署後登入後台，在 Settings 頁面設定
+
