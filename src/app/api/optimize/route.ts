@@ -30,7 +30,7 @@ class OptimizerClient {
     - **明確的約束 (Constraints)**: 設定清晰的規則和限制，避免 AI 偏離主題。
 3.  **整合回饋**: 針對\`審核者回饋\`中的每一條建議，思考如何將其融入到新的 Prompt 中。
 4.  **輸出**: 只輸出**完整且可直接使用**的新 Prompt 內容，不要包含任何額外的解釋或對話。`
-    
+
     this.criticPrompt = criticPrompt || `你是一位嚴謹、注重細節的 AI 系統分析師。你的任務是評估一個給定的 Prompt，並提供結構化的、可執行的回饋。
 
 你的評估必須基於以下五個維度，每個維度滿分 100：
@@ -44,7 +44,7 @@ class OptimizerClient {
 1.  **比較**: 將\`待審核的 Prompt\`與用戶的\`初始需求\`進行比較，確保核心目標一致。
 2.  **評分**: 根據上述五個維度，獨立打分。
 3.  **計算總分**: \`overall_score\` 是五個維度分數的加權平均值 (原意符合度權重最高，例如 40%，其餘各 15%)。
-4.  **提供回饋**: 
+4.  **提供回饋**:
     - \`feedback_summary\`: 用一句話總結你的整體看法。
     - \`actionable_suggestions\`: 提供 2-3 條具體的、可立即執行的修改建議，用於指導下一個版本的改進。
 
@@ -71,14 +71,17 @@ class OptimizerClient {
       maxTokens?: number
     }
   ) {
-    try {
-      const sanitizedInitial = initialPrompt.trim()
-      const sanitizedCurrent = currentPrompt.trim() || sanitizedInitial
-      const feedbackSection = previousFeedback.length
-        ? previousFeedback.map((item, index) => `${index + 1}. ${item}`).join('\n')
-        : '目前尚未收到審核回饋，請根據初始需求自行優化。'
+    const sanitizedInitial = initialPrompt.trim()
+    const sanitizedCurrent = currentPrompt.trim() || sanitizedInitial
+    const feedbackSection = previousFeedback.length
+      ? previousFeedback.map((item, index) => `${index + 1}. ${item}`).join('\n')
+      : '目前尚未收到審核回饋，請根據初始需求自行優化。'
 
-      const optimizationPrompt = `${this.improverPrompt}
+    const messages = [
+      { role: 'system' as const, content: this.improverPrompt },
+      {
+        role: 'user' as const,
+        content: `以下是 Prompt 優化所需的完整資訊：
 
 初始使用者需求：
 """
@@ -93,49 +96,27 @@ ${sanitizedCurrent}
 上一輪審核者回饋（若有）：
 ${feedbackSection}
 
-請依據上述資訊，輸出一份完全優化後且可直接使用的提示詞內容。輸出時請不要包含任何額外說明，只需提供最終提示詞。`
-      const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
-      const temperature = typeof options?.temperature === 'number' ? options.temperature : 0.3
-      const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 1024
-      const text = await callProvider(
-        provider as ProviderName,
-        model,
-        [{ role: 'user', content: optimizationPrompt }],
-        apiKey || '',
-        { temperature, maxTokens }
-      )
-      return text
-    } catch (error) {
-      console.error('Optimization API error:', error)
-      // 失敗時返回模擬優化
-      return this.simulateOptimization(initialPrompt, currentPrompt, previousFeedback)
+請依據上述內容輸出一份可以直接使用的最終提示詞，不要輸出任何額外說明。`,
+      },
+    ]
+
+    const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
+    const temperature = typeof options?.temperature === 'number' ? options.temperature : 0.3
+    const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 1024
+
+    const text = (await callProvider(
+      provider as ProviderName,
+      model,
+      messages,
+      apiKey || '',
+      { temperature, maxTokens }
+    ))?.trim()
+
+    if (!text) {
+      throw new Error('LLM 回傳內容為空，請檢查模型及金鑰設定')
     }
-  }
 
-  private simulateOptimization(initialPrompt: string, currentPrompt: string, previousFeedback: string[]) {
-    const base = (currentPrompt || initialPrompt).trim()
-    const feedbackNotes = previousFeedback.length
-      ? previousFeedback.map((item) => `- ${item}`).join('\n')
-      : '- 補充明確的角色設定\n- 加入具體步驟與條件\n- 說明需要的輸出格式'
-
-    return `# 角色
-你是一位專業助理，擅長將需求拆解為可執行的步驟並提供精準回覆。
-
-# 任務目標
-${base || '請根據使用者需求提供最佳解決方案'}
-
-# 執行流程
-1. 先確認使用者的核心需求與限制條件。
-2. 根據需求拆解出具體的步驟或章節，並補充必要的背景資訊。
-3. 主動提供安全與注意事項，如有需要可附上範例。
-
-# 審核回饋整合
-${feedbackNotes}
-
-# 輸出格式
-- 使用條列方式清楚呈現重點。
-- 若涉及步驟，請依序標號並提供細節。
-- 全程使用繁體中文回覆。`
+    return text
   }
 
   async generateReviewScores(
@@ -148,8 +129,11 @@ ${feedbackNotes}
       maxTokens?: number
     }
   ): Promise<ReviewAnalysis> {
-    try {
-      const reviewPrompt = `${this.criticPrompt}
+    const messages = [
+      { role: 'system' as const, content: this.criticPrompt },
+      {
+        role: 'user' as const,
+        content: `請依據下列資訊提供評分結果，務必輸出合法 JSON：
 
 使用者初始需求：
 """
@@ -159,75 +143,59 @@ ${initialPrompt}
 待審核的提示詞：
 """
 ${prompt}
-"""
+"""`,
+      },
+    ]
 
-請只返回JSON格式的評分，不要添加任何其他內容。`
-      const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
-      const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 512
-      const jsonResponse = await callProvider(
-        provider as ProviderName,
-        model,
-        [{ role: 'user', content: reviewPrompt }],
-        apiKey || '',
-        { temperature: 0, maxTokens }
-      )
-      const text = (jsonResponse || '').trim()
+    const model = options?.model?.trim() || (provider === 'gemini' ? 'gemini-2.5-flash' : 'deepseek-chat')
+    const maxTokens = typeof options?.maxTokens === 'number' ? options.maxTokens : 512
 
-      // 嘗試解析JSON回應
-      try {
-        const parsed = JSON.parse(text) as {
-          scores?: Record<string, number>
-          overall_score?: number
-          actionable_suggestions?: unknown
-        }
+    const jsonResponse = await callProvider(
+      provider as ProviderName,
+      model,
+      messages,
+      apiKey || '',
+      { temperature: 0, maxTokens }
+    )
 
-        const normalizedScores = Object.entries(parsed.scores || {}).reduce<Record<string, number>>((acc, [key, value]) => {
-          if (typeof value === 'number' && !Number.isNaN(value)) {
-            acc[key] = value
-          }
-          return acc
-        }, {})
+    const text = (jsonResponse || '').trim()
+    if (!text) {
+      throw new Error('審核模型回傳內容為空，請檢查設定')
+    }
 
-        const feedback = Array.isArray(parsed.actionable_suggestions)
-          ? parsed.actionable_suggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-          : []
+    let parsed: {
+      scores?: Record<string, number>
+      overall_score?: number
+      actionable_suggestions?: unknown
+    }
 
-        const totalFromResponse = typeof parsed.overall_score === 'number' && !Number.isNaN(parsed.overall_score)
-          ? parsed.overall_score
-          : Object.values(normalizedScores).length
-            ? Object.values(normalizedScores).reduce((sum, num) => sum + num, 0) / Object.values(normalizedScores).length
-            : 0
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      throw new Error('審核模型未回傳有效的 JSON，請調整提示詞或模型設定')
+    }
 
-        return {
-          scores: normalizedScores,
-          total: Math.round(totalFromResponse),
-          feedback: feedback.length ? feedback : ['加強角色與目標設定', '補充具體步驟與範例', '清楚定義輸出格式與限制'],
-        }
-      } catch {
-        // 如果解析失敗，返回模擬評分
-        return this.generateSimulatedScores()
+    const normalizedScores = Object.entries(parsed.scores || {}).reduce<Record<string, number>>((acc, [key, value]) => {
+      if (typeof value === 'number' && !Number.isNaN(value)) {
+        acc[key] = value
       }
-    } catch (error) {
-      console.error('Review API error:', error)
-      return this.generateSimulatedScores()
-    }
-  }
+      return acc
+    }, {})
 
-  private generateSimulatedScores(): ReviewAnalysis {
-    const scores = {
-      clarity: Math.floor(Math.random() * 15) + 85,
-      specificity: Math.floor(Math.random() * 15) + 85,
-      completeness: Math.floor(Math.random() * 15) + 85,
-      robustness: Math.floor(Math.random() * 15) + 85,
-      intent_adherence: Math.floor(Math.random() * 15) + 85,
-    }
+    const feedback = Array.isArray(parsed.actionable_suggestions)
+      ? parsed.actionable_suggestions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
 
-    const total = Math.round(Object.values(scores).reduce((sum, score) => sum + score, 0) / Object.values(scores).length)
+    const totalFromResponse = typeof parsed.overall_score === 'number' && !Number.isNaN(parsed.overall_score)
+      ? parsed.overall_score
+      : Object.values(normalizedScores).length
+        ? Object.values(normalizedScores).reduce((sum, num) => sum + num, 0) / Object.values(normalizedScores).length
+        : 0
 
     return {
-      scores,
-      total,
-      feedback: ['明確定義角色職責', '加入具體步驟與情境資訊', '說明輸出格式與品質標準'],
+      scores: normalizedScores,
+      total: Math.round(totalFromResponse),
+      feedback,
     }
   }
 }
@@ -295,84 +263,91 @@ export async function POST(request: NextRequest) {
         let previousFeedback: string[] = []
 
         for (let round = 1; round <= iterations; round++) {
-          // Use the optimizer to improve the prompt
-          const improvedPrompt = await optimizer.optimizePrompt(
-            initialPrompt,
-            currentPrompt,
-            previousFeedback,
-            provider,
-            effectiveKey,
-            { model: chosenModel, temperature: effectiveTemperature, maxTokens: effectiveMaxTokens }
-          )
+          try {
+            const improvedPrompt = await optimizer.optimizePrompt(
+              initialPrompt,
+              currentPrompt,
+              previousFeedback,
+              provider,
+              effectiveKey,
+              { model: chosenModel, temperature: effectiveTemperature, maxTokens: effectiveMaxTokens }
+            )
 
-          // Generate review scores
-          const review = await optimizer.generateReviewScores(
-            initialPrompt,
-            improvedPrompt,
-            provider,
-            effectiveKey,
-            { model: chosenModel, maxTokens: Math.min(effectiveMaxTokens, 800) }
-          )
+            const review = await optimizer.generateReviewScores(
+              initialPrompt,
+              improvedPrompt,
+              provider,
+              effectiveKey,
+              { model: chosenModel, maxTokens: Math.min(effectiveMaxTokens, 800) }
+            )
 
-          const totalScore = review.total
+            const totalScore = review.total
+            const feedback = review.feedback.length
+              ? review.feedback
+              : ['強化提示詞的清晰度', '補充必要的限制條件', '提供具體輸出格式建議']
 
-          const feedback = review.feedback.length
-            ? review.feedback
-            : ['強化提示詞的清晰度', '補充必要的限制條件', '提供具體輸出格式建議']
+            if (totalScore > bestScore) {
+              bestScore = totalScore
+              bestPrompt = improvedPrompt
+            }
 
-          // Update best result
-          if (totalScore > bestScore) {
-            bestScore = totalScore
-            bestPrompt = improvedPrompt
-          }
+            previousFeedback = feedback
+            currentPrompt = improvedPrompt
 
-          previousFeedback = feedback
-          currentPrompt = improvedPrompt
-
-          // Send round data
-          const roundData = {
-            round,
-            improved: improvedPrompt,
-            review: {
-              scores: review.scores,
-              total: totalScore,
-              feedback,
-            },
-            bestSoFar: {
-              prompt: bestPrompt,
-              score: bestScore,
-            },
-          }
-
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(roundData)}\n\n`)
-          )
-
-          // Check stopping conditions
-          if (totalScore >= threshold) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({
-                type: 'final',
+            const roundData = {
+              round,
+              improved: improvedPrompt,
+              review: {
+                scores: review.scores,
+                total: totalScore,
+                feedback,
+              },
+              bestSoFar: {
                 prompt: bestPrompt,
                 score: bestScore,
-                stopBy: 'threshold',
+              },
+            }
+
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(roundData)}\n\n`)
+            )
+
+            if (totalScore >= threshold) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({
+                  type: 'final',
+                  prompt: bestPrompt,
+                  score: bestScore,
+                  stopBy: 'threshold',
+                })}\n\n`)
+              )
+              break
+            }
+
+            if (round === iterations) {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({
+                  type: 'final',
+                  prompt: bestPrompt,
+                  score: bestScore,
+                  stopBy: 'max_iterations',
+                })}\n\n`)
+              )
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 500))
+          } catch (error) {
+            const message = error instanceof Error ? error.message : '未知錯誤，請稍後再試'
+            console.error('Optimizer pipeline error:', error)
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({
+                type: 'error',
+                round,
+                message,
               })}\n\n`)
             )
             break
           }
-
-          if (round === iterations) {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({
-                type: 'final',
-                prompt: bestPrompt,
-                score: bestScore,
-                stopBy: 'max_iterations',
-              })}\n\n`)
-            )
-          }
-
-          await new Promise(resolve => setTimeout(resolve, 500))
         }
 
         controller.close()
