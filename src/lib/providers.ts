@@ -62,12 +62,24 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
     parts: [{ text: m.content }],
   }))
 
-  const body: { contents: { role: 'user' | 'model'; parts: { text: string }[] }[]; generationConfig?: { temperature?: number; maxOutputTokens?: number } } = { contents }
+  const body: {
+    contents: { role: 'user' | 'model'; parts: { text: string }[] }[]
+    generationConfig?: { temperature?: number; maxOutputTokens?: number }
+    safetySettings?: { category: string; threshold: string }[]
+  } = { contents }
   if (typeof cfg.temperature === 'number' || typeof cfg.maxTokens === 'number') {
     body.generationConfig = {}
     if (typeof cfg.temperature === 'number') body.generationConfig.temperature = cfg.temperature
     if (typeof cfg.maxTokens === 'number') body.generationConfig.maxOutputTokens = cfg.maxTokens
   }
+
+  body.safetySettings = [
+    'HARM_CATEGORY_HARASSMENT',
+    'HARM_CATEGORY_HATE_SPEECH',
+    'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    'HARM_CATEGORY_DANGEROUS_CONTENT',
+    'HARM_CATEGORY_CIVIC_INTEGRITY',
+  ].map(category => ({ category, threshold: 'BLOCK_NONE' }))
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
   const res = await fetch(url, {
