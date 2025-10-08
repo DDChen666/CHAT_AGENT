@@ -96,9 +96,34 @@ async function callGemini(model: string, messages: ChatMessage[], apiKey: string
     throw new Error(msg)
   }
   const data = await res.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-  if (!text) throw new Error('Gemini returned empty response')
-  return text
+  const textCandidate = Array.isArray(data.candidates)
+    ? data.candidates
+        .map((candidate: { content?: { parts?: { text?: string }[] }; finishReason?: string }) => {
+          const parts = candidate.content?.parts || []
+          return parts
+            .map(part => (typeof part?.text === 'string' ? part.text : ''))
+            .join('')
+            .trim()
+        })
+        .find(Boolean)
+    : undefined
+
+  if (textCandidate) return textCandidate
+
+  const blockReason = data.promptFeedback?.blockReason
+  const finishReason = data.candidates?.[0]?.finishReason
+  const safetyRatings =
+    data.promptFeedback?.safetyRatings || data.candidates?.[0]?.safetyRatings
+
+  const details: string[] = []
+  if (blockReason) details.push(`blockReason: ${blockReason}`)
+  if (finishReason) details.push(`finishReason: ${finishReason}`)
+  if (Array.isArray(safetyRatings) && safetyRatings.length) {
+    details.push(`safetyRatings: ${JSON.stringify(safetyRatings)}`)
+  }
+
+  const suffix = details.length ? ` (${details.join(', ')})` : ''
+  throw new Error(`Gemini returned empty response${suffix}`)
 }
 
 async function callDeepSeek(model: string, messages: ChatMessage[], apiKey: string, cfg: GenConfig) {
