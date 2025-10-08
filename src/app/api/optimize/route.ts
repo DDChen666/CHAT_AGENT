@@ -12,6 +12,43 @@ type ReviewAnalysis = {
   feedback: string[]
 }
 
+function parseReviewJson(raw: string): {
+  scores?: Record<string, number>
+  overall_score?: number
+  actionable_suggestions?: unknown
+} {
+  const trimmed = raw.trim()
+
+  const candidates: string[] = []
+  if (trimmed) candidates.push(trimmed)
+
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (codeBlockMatch?.[1]) {
+    candidates.push(codeBlockMatch[1].trim())
+  }
+
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1).trim())
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate)
+      if (parsed && typeof parsed === 'object') {
+        return parsed as {
+          scores?: Record<string, number>
+          overall_score?: number
+          actionable_suggestions?: unknown
+        }
+      }
+    } catch {}
+  }
+
+  throw new Error('審核模型未回傳有效的 JSON，請調整提示詞或模型設定')
+}
+
 // 優化器邏輯
 class OptimizerClient {
   private improverPrompt: string
@@ -182,17 +219,7 @@ ${prompt}
       throw new Error('審核模型回傳內容為空，請檢查設定')
     }
 
-    let parsed: {
-      scores?: Record<string, number>
-      overall_score?: number
-      actionable_suggestions?: unknown
-    }
-
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      throw new Error('審核模型未回傳有效的 JSON，請調整提示詞或模型設定')
-    }
+    const parsed = parseReviewJson(text)
 
     const normalizedScores = Object.entries(parsed.scores || {}).reduce<Record<string, number>>((acc, [key, value]) => {
       if (typeof value === 'number' && !Number.isNaN(value)) {
