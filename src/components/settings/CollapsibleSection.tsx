@@ -40,7 +40,7 @@ export function CollapsibleSection({ title, icon, defaultExpanded = false, child
       <div
         className={cn(
           'overflow-hidden transition-all duration-300 ease-in-out',
-          isExpanded ? 'max-h-[32rem] opacity-100' : 'max-h-0 opacity-0'
+          isExpanded ? 'max-h-[56rem] opacity-100' : 'max-h-0 opacity-0'
         )}
       >
         <div className="p-4 bg-background">{children}</div>

@@ -14,7 +14,7 @@ interface OptimizerInterfaceProps {
 
 export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
   const { optimizerStates, setOptimizerInitialPrompt, addOptimizerRound, setOptimizerBestResult, resetOptimizerProgress } = useAppStore()
-  const { modelSettings, apiKeys } = useSettingsStore()
+  const { modelSettings, apiKeys, systemPrompts } = useSettingsStore()
   const [input, setInput] = useState('')
   const [isOptimizing, setIsOptimizing] = useState(false)
   const [currentRound, setCurrentRound] = useState(0)
@@ -53,6 +53,7 @@ export default function OptimizerInterface({ tabId }: OptimizerInterfaceProps) {
           threshold: 90,
           provider,
           apiKey: selectedKey,
+          systemPrompts,
         }),
       })
 
